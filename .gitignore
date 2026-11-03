@@ -1,0 +1,9 @@
+.env
+node_modules/
+site/dist/
+site/site-data/
+__pycache__/
+.venv/
+out/
+.superpowers/
+.pytest_cache/
