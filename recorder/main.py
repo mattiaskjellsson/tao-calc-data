@@ -5,6 +5,7 @@ import json
 import os
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 
@@ -29,7 +30,10 @@ def gh(method: str, path: str, token: str, body=None, data: bytes | None = None,
                "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "tao-calc-recorder"}
     if payload is not None:
         headers["Content-Type"] = ctype
-    req = urllib.request.Request(path if path.startswith("http") else API + path, data=payload, method=method, headers=headers)
+    url = path if path.startswith("http") else API + path
+    if not url.startswith(("https://api.github.com/", "https://uploads.github.com/")):
+        raise ValueError(f"refusing to send the token to {urllib.parse.urlsplit(url).hostname}")
+    req = urllib.request.Request(url, data=payload, method=method, headers=headers)
     with urllib.request.urlopen(req, timeout=300) as r:
         raw = r.read()
         return json.loads(raw) if raw else {}

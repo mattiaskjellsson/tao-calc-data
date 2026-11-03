@@ -1,6 +1,8 @@
 """Fetch every source once. Each source is isolated: a failure becomes {"error": ...} and never stops the others."""
+import ipaddress
 import json
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
@@ -16,12 +18,30 @@ METAGRAPH_KEYS = ("netuid", "name", "symbol", "tao_in", "alpha_in", "alpha_out_e
                   "owner_coldkey", "num_uids", "max_uids", "hotkeys", "coldkeys", "incentives", "block_at_registration", "block")
 
 
+class SafeRedirect(urllib.request.HTTPRedirectHandler):
+    """Follow redirects only to https on a named public host: responses land in the public archive."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        u = urllib.parse.urlsplit(newurl)
+        host = u.hostname or ""
+        try:
+            internal = not ipaddress.ip_address(host).is_global
+        except ValueError:
+            internal = host == "localhost" or host.endswith(".internal") or "." not in host
+        if u.scheme != "https" or internal:
+            raise urllib.error.HTTPError(newurl, code, f"refused redirect to {u.scheme}://{host}", headers, fp)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+OPENER = urllib.request.build_opener(SafeRedirect)
+
+
 def get(url: str, body=None, timeout: int = 40):
     headers = {"User-Agent": UA, "Accept": "application/json"}
     if body is not None:
         headers["Content-Type"] = "application/json"
     req = urllib.request.Request(url, data=json.dumps(body).encode() if body is not None else None, headers=headers)
-    with urllib.request.urlopen(req, timeout=timeout) as r:
+    with OPENER.open(req, timeout=timeout) as r:
         return json.load(r)
 
 
