@@ -25,7 +25,7 @@ def mg(coldkeys, incentives):
 def test_subnet_stats_excludes_owner_and_zero():
     s = subnet_stats(mg(["OWN", "a", "b", "c", "d"], [100.0, 1.0, 3.0, 0.0, 0.0]))
     pool = 1.0 * 7200 * 0.41 * 0.5
-    assert s["n"] == 4
+    assert s["n"] == 4 and s["earners"] == 2
     assert s["zero_share"] == 0.5
     assert math.isclose(s["p"]["top"], pool * 0.75)
     assert math.isclose(s["p"]["p10"], pool * 0.25)  # percentiles over the two earners only
@@ -118,3 +118,9 @@ def test_benchmarks_prefers_non_lhr():
          "speeds": json.dumps({"KAWPOW": 24e6, "ETCHASH": ""}), "powers": json.dumps({"KAWPOW": 120})}]
     b = benchmarks(devices, TABLES, NOW)
     assert b["gpus"]["rtx3060"] == {"kawpow": [24e6, 120]}
+
+
+def test_asset_names():
+    from main import asset_name
+
+    assert asset_name(datetime(2026, 11, 3, 10, 7, tzinfo=timezone.utc)) == ("data-2026-11", "2026-11-03T10Z.json.gz")

@@ -50,7 +50,7 @@ def subnet_stats(mg: dict) -> dict:
 
     return {
         "netuid": mg["netuid"], "name": mg.get("name") or "", "price_tao": price, "pool_tao_day": pool,
-        "burn_tao": mg["burn"] / RAO, "immunity_blocks": mg["immunity_period"], "n": len(values),
+        "burn_tao": mg["burn"] / RAO, "immunity_blocks": mg["immunity_period"], "n": len(values), "earners": len(earners),
         "zero_share": (len(values) - len(earners)) / len(values) if values else 1.0,
         "p": {**{f"p{q}": pick(q) for q in (10, 25, 50, 75, 90)}, "top": earners[-1] if earners else 0.0},
     }
