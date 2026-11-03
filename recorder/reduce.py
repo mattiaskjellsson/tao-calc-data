@@ -9,7 +9,6 @@ RAO = 1_000_000_000
 BLOCKS_PER_DAY = 7200
 MINER_SHARE = 0.41
 UNIT = {"h": 1, "kh": 1e3, "mh": 1e6, "gh": 1e9, "th": 1e12, "ph": 1e15, "eh": 1e18}
-MARKETS = ("vast", "clore", "lium", "runpod", "akash", "ionet")
 
 
 def norm(s: str) -> str:
@@ -83,6 +82,8 @@ def realised_vol(closes: list[float]) -> float:
 
 
 def nicehash_book(orders: list, price_factor: float, market_factor: float, levels: int = 20) -> list:
+    if price_factor <= 0 or market_factor <= 0:
+        return []
     live = sorted((float(o["price"]) / price_factor, float(o["acceptedSpeed"]) * market_factor)
                   for o in orders if o.get("alive", True) and float(o["acceptedSpeed"]) > 0)
     cum, book = 0.0, []
@@ -163,37 +164,68 @@ class _Acc:
                       for m, e in markets.items()} for gid, markets in self.data.items()}
 
 
-def _rentals(raw: dict, tables: dict) -> tuple[dict, dict]:
-    aliases, acc = alias_map(tables), _Acc()
-    ok = {m: raw.get(m) for m in MARKETS if raw.get(m) is not None and not failed(raw.get(m))}
-    for gid, res in (ok.get("vast") or {}).items():
+# Each parser yields (name, $/GPU-hour, extra) per listing; a parser that raises fails only its own market.
+def _vast(src, tables, aliases):
+    for gid, res in src.items():
         if failed(res):
             continue
-        name = tables["gpus"][gid]["vast"]
         # ponytail: keyless Vast returns the 64 cheapest offers per model, so "med" is the median of those, biased low.
         for o in res.get("offers", []):
-            acc.add(aliases, "vast", name, o["dph_total"] / max(1, o.get("num_gpus") or 1))
-    for s in (ok.get("clore") or {}).get("servers", []):
-        m = re.match(r"(\d+)x (.*)", s.get("specs", {}).get("gpu", ""))
-        price = (s.get("price", {}).get("usd") or {}).get("on_demand_usd")
-        if m and price:  # Clore prices are per server per day
-            acc.add(aliases, "clore", m.group(2), price / 24 / int(m.group(1)), rented=float(bool(s.get("rented"))), total=1.0)
-    for n in (ok.get("lium") or {}).get("nodes", []):
+            yield tables["gpus"][gid]["vast"], o["dph_total"] / max(1, o.get("num_gpus") or 1), {}
+
+
+def _clore(src, tables, aliases):
+    for s in src.get("servers", []):
+        m = re.match(r"(\d+)x (.*)", (s.get("specs") or {}).get("gpu", ""))
+        price = ((s.get("price") or {}).get("usd") or {}).get("on_demand_usd")
+        if m and price and int(m.group(1)) > 0:  # Clore prices are per server per day
+            yield m.group(2), price / 24 / int(m.group(1)), {"rented": float(bool(s.get("rented"))), "total": 1.0}
+
+
+def _lium(src, tables, aliases):
+    for n in src.get("nodes", []):
         # Lium's public list shows only free nodes, so it carries no utilisation signal.
-        acc.add(aliases, "lium", n["gpu_model"], n.get("price_per_gpu_hour"))
-    for g in ((ok.get("runpod") or {}).get("data") or {}).get("gpuTypes", []):
-        acc.add(aliases, "runpod", g["id"], (g.get("lowestPrice") or {}).get("uninterruptablePrice"))
-    for m in (ok.get("akash") or {}).get("models", []):
+        yield n["gpu_model"], n.get("price_per_gpu_hour"), {}
+
+
+def _runpod(src, tables, aliases):
+    for g in (src.get("data") or {}).get("gpuTypes", []):
+        yield g["id"], (g.get("lowestPrice") or {}).get("uninterruptablePrice"), {}
+
+
+def _akash(src, tables, aliases):
+    for m in src.get("models", []):
         ram = re.sub(r"\D", "", m.get("ram", ""))
         name = next((k for k in (m["model"] + ram + m.get("interface", ""), m["model"] + ram, m["model"])
                      if norm(k) in aliases), m["model"] + " " + m.get("ram", ""))
         av, price = m.get("availability") or {}, m.get("price") or {}
-        acc.add(aliases, "akash", name, price.get("med"), rented=av.get("total", 0) - av.get("available", 0),
-                total=av.get("total", 0), low=price.get("min"), n=av.get("total", 1))
-    for d in (ok.get("ionet") or {}).get("data", []):
-        acc.add(aliases, "ionet", d["hardware_name"], d.get("price"), rented=d.get("hired", 0), total=d.get("total", 0),
-                n=d.get("total", 1))
-    return acc.out(), acc.unmatched
+        yield name, price.get("med"), {"rented": av.get("total", 0) - av.get("available", 0), "total": av.get("total", 0),
+                                       "low": price.get("min"), "n": av.get("total", 1)}
+
+
+def _ionet(src, tables, aliases):
+    for d in src.get("data", []):
+        yield d["hardware_name"], d.get("price"), {"rented": d.get("hired", 0), "total": d.get("total", 0),
+                                                   "n": d.get("total", 1)}
+
+
+PARSERS = {"vast": _vast, "clore": _clore, "lium": _lium, "runpod": _runpod, "akash": _akash, "ionet": _ionet}
+
+
+def _rentals(raw: dict, tables: dict) -> tuple[dict, dict, dict]:
+    aliases, acc, bad = alias_map(tables), _Acc(), {}
+    for market, parse in PARSERS.items():
+        src = raw.get(market)
+        if src is None or failed(src):
+            continue
+        try:
+            items = list(parse(src, tables, aliases))
+        except Exception as e:
+            bad[market] = f"unparseable: {e!r}"[:200]
+            continue
+        for name, price, extra in items:
+            acc.add(aliases, market, name, price, **extra)
+    return acc.out(), acc.unmatched, bad
 
 
 def _nicehash(raw: dict, tables: dict) -> dict:
@@ -261,7 +293,9 @@ def reduce(raw: dict, tables: dict, now: datetime) -> dict:
     binance = _prices(raw)
     coins, coin_usd = _coins(raw, tables, binance)
     usd = {k: binance[k] for k in ("BTC", "TAO") if k in binance} | coin_usd
-    rentals, unmatched = _rentals(raw, tables)
+    rentals, unmatched, bad = _rentals(raw, tables)
+    sources = {k: ({"ok": False, "error": str(v["error"])[:200]} if failed(v) else {"ok": True}) for k, v in raw.items()}
+    sources |= {k: {"ok": False, "error": e} for k, e in bad.items()}
     bt = raw.get("bittensor")
     subnets = []
     if bt and not failed(bt):
@@ -275,7 +309,7 @@ def reduce(raw: dict, tables: dict, now: datetime) -> dict:
                     subnets.append(s)
     return {
         "ts": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "sources": {k: ({"ok": False, "error": str(v["error"])[:200]} if failed(v) else {"ok": True}) for k, v in raw.items()},
+        "sources": sources,
         "usd": {k: sig(v) for k, v in usd.items()},
         "vol": _vol(raw, usd, now, tables["defaults"]["vol_fallback"]),
         "coins": coins,

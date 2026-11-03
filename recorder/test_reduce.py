@@ -124,3 +124,18 @@ def test_asset_names():
     from main import asset_name
 
     assert asset_name(datetime(2026, 11, 3, 10, 7, tzinfo=timezone.utc)) == ("data-2026-11", "2026-11-03T10Z.json.gz")
+
+
+def test_junk_records_fail_only_their_market():
+    clore = {"servers": [{"specs": {"gpu": "0x NVIDIA GeForce RTX 4090"}, "price": {"usd": {"on_demand_usd": 9.6}}},
+                         {"specs": {"gpu": "1x NVIDIA GeForce RTX 4090"}, "price": {"usd": {"on_demand_usd": 9.6}}}]}
+    lium = {"nodes": [{"price_per_gpu_hour": 0.4}]}  # no gpu_model
+    ionet = {"data": [{"hardware_name": "GeForce RTX 4090", "price": 0.25, "total": 10, "hired": 4}]}
+    out = reduce(raw_min(clore=clore, lium=lium, ionet=ionet), TABLES, NOW)
+    assert out["rentals"]["rtx4090"]["clore"]["n"] == 1
+    assert out["sources"]["lium"]["ok"] is False
+    assert out["rentals"]["rtx4090"]["ionet"]["min"] == 0.25
+
+
+def test_nicehash_book_zero_factor():
+    assert nicehash_book([{"price": "0.06", "acceptedSpeed": "0.02"}], 0, 1e12) == []

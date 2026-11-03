@@ -112,7 +112,7 @@ def main() -> int:
     print(f"fetched: {len(public)} public sources, errors: {errors or 'none'}", flush=True)
 
     pub_gz, priv_gz = snapshot(now, public), snapshot(now, private)
-    latest = json.dumps(reduce(public, tables, now), separators=(",", ":")).encode()
+    latest = json.dumps(reduce(public, tables, now), separators=(",", ":"), allow_nan=False).encode()
     bench = benchmarks(public["nicehash_devices"]["devices"], tables, now) \
         if isinstance(public.get("nicehash_devices"), dict) and "devices" in public["nicehash_devices"] else None
 
