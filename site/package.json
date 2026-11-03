@@ -1,0 +1,13 @@
+{
+  "name": "gpu-calculator-site",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc && cp ../tables.json dist/",
+    "test": "npm run build && node --test dist/*.test.js"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.2",
+    "typescript": "5.7.2"
+  }
+}
