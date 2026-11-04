@@ -107,8 +107,6 @@ python3 -m http.server 8080                               # open http://localhos
 - **Recorder:** run `railway up --service recorder` from the repo root. The service settings are Dockerfile path `recorder/Dockerfile`, cron `5 * * * *` and restart policy never. They were set once through Railway's API (`serviceInstanceUpdate`) because Railway no longer reads `railway.json`.
   - The service needs `GITHUB_REPO_DATA_KEY`: a fine-grained token with Contents read and write on this repo and the private archive repo.
   - `PUBLIC_REPO` and `PRIVATE_REPO` are optional overrides.
-- **Site on GitHub Pages:** `.github/workflows/site.yml` deploys on pushes that change anything outside `site-data/`.
-- **Site on Cloudflare Pages:**
-  - build command `cd site && npm ci && npm run build`
-  - output directory `site`
-  - build watch paths excluding `site-data/*`, so the hourly data commits don't use up the 500 builds a month
+- **Site on Cloudflare Pages** (https://tao-calc.pages.dev): run `cd site && npm run deploy:cloudflare`. It uses your local `wrangler` login and uploads `_site/` to the Pages project `tao-calc`. Only code changes need a deploy, because the page reads the hourly data straight from this repo.
+- **Site on GitHub Pages** (https://mattiaskjellsson.github.io/tao-calc-data/): `.github/workflows/site.yml` deploys on pushes that change anything outside `site-data/`.
+- **Pushing:** the recorder commits `site-data/latest.json` to `main` every hour, so run `git pull --rebase` before you push.

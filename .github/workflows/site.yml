@@ -24,7 +24,8 @@ jobs:
           node-version: 22
       - run: npm ci && npm test
         working-directory: site
-      - run: mkdir _site && cp -r site/index.html site/style.css site/dist _site/ && rm _site/dist/*.test.js
+      - run: npm run bundle
+        working-directory: site
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site

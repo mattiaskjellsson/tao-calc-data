@@ -4,7 +4,9 @@
   "type": "module",
   "scripts": {
     "build": "tsc && cp ../tables.json dist/",
-    "test": "npm run build && node --test dist/*.test.js"
+    "test": "npm run build && node --test dist/*.test.js",
+    "bundle": "npm run build && rm -rf ../_site && mkdir ../_site && cp -r index.html style.css dist ../_site/ && rm ../_site/dist/*.test.js",
+    "deploy:cloudflare": "npm run bundle && wrangler pages deploy ../_site --project-name tao-calc --branch main"
   },
   "devDependencies": {
     "@types/node": "22.10.2",

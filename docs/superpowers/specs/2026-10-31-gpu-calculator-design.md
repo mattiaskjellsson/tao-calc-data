@@ -306,9 +306,10 @@ revenue_day = market_price_per_hour(GPU model, market) × 24 × utilisation × (
 ## Owner to-dos
 
 - ~~Create the public GitHub repo.~~ Done 2026-11-04: `tao-calc-data`, with GitHub Pages on.
-- Create a Cloudflare account (free, no card) and connect Pages to the repo.
+- ~~Cloudflare Pages.~~ Done 2026-11-04: https://tao-calc.pages.dev (wrangler direct upload; `npm run deploy:cloudflare`).
 - Optional: email info@deribit.com to ask for written approval to publish Deribit option data in a free, non-commercial open archive.
 - ~~Create the private archive repo.~~ Done 2026-11-02: `tao-calc-data-private`.
-- ~~Create the token and store it in Railway.~~ Done: `GITHUB_REPO_DATA_KEY` on the Railway service `recorder`. **Still to do: add `tao-calc-data` to the token's repository access.**
-- Check the terms of the sources still archived privately (WhatToMine, NiceHash, MiningRigRentals, Vast, Clore, Lium, RunPod, Akash, io.net, Hyperliquid, CoinGecko), and add the ones that allow republishing to `publish_raw` in `tables.json`.
+- ~~Create the token and store it in Railway.~~ Done: `GITHUB_REPO_DATA_KEY` on the Railway service `recorder`. Public repo added to the token 2026-11-04.
+- ~~Check the remaining sources' terms.~~ Done 2026-11-04: see "Sources and their terms" in the README. Vast and RunPod are no longer collected, because their terms forbid automated collection.
+- **Open:** WhatToMine's terms forbid using its API "for any application that replicates or attempts to replace the essential user experience of whattomine.com". Ask for permission, or replace the source.
 - Add any free API keys yourself as Railway variables. Never paste them into chat or files. The Alpha Vantage key pasted into chat on 2026-10-31 should be regenerated, although this project doesn't need it.
