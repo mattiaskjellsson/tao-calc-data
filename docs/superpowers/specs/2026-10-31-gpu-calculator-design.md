@@ -1,6 +1,6 @@
 # GPU calculator: design
 
-**Date:** 2026-10-31 · **Status:** draft, waiting for the owner's review
+**Date:** 2026-10-31 · **Status:** approved by the owner 2026-11-03; v1 built (plan: `docs/superpowers/plans/2026-11-03-gpu-calculator-v1.md`)
 
 ## Why
 
@@ -137,7 +137,7 @@ The tao project ([Heading/tao](../../../../Heading/tao)) only covers Bittensor, 
 1. **The recorder** (Python): a Railway cron service that runs hourly, in the owner's existing Railway project (now named `binance-probe`, Amsterdam region). *(owner's decision, 2026-11-02; see "Where the recorder runs")* Python, so it can reuse the tao project's Bittensor code and match that project's language. *(my call)*
 2. **The site** (TypeScript, static): hosted on Cloudflare Pages. It does all the math in the visitor's browser from files the recorder writes, and it never calls an outside API. Visitors therefore can't use up rate limits or see keys, and traffic costs nothing.
 
-The repo lives on the owner's GitHub account. The working name is `mining-calculator`, and the owner can rename it.
+The repo lives on the owner's GitHub account. It's [`mattiaskjellsson/tao-calc-data`](https://github.com/mattiaskjellsson/tao-calc-data) (created 2026-11-04).
 
 ### Where data goes *(my call)*
 
@@ -178,7 +178,7 @@ The recorder may still *read* these to compute figures for `latest.json`, such a
 
 **Kept out of the public archive (licence limits):**
 - **Deribit option books and DVOL** (personal use only, see "Data terms"). The hourly job still collects them, but into a **second, private repo**, [`mattiaskjellsson/tao-calc-data-private`](https://github.com/mattiaskjellsson/tao-calc-data-private) (created by the owner 2026-11-02), using the same monthly-release layout. That keeps the history for the owner's own research and for the tao work.
-  - **Access:** the Railway service holds one fine-grained token, `GH_TOKEN`, with Contents read and write on just the public repo and this private one. It's a Railway variable, so it never touches either repo. It expires after 366 days, so the owner renews it about once a year. When it expires, uploads fail with a 401, and the recorder logs that clearly.
+  - **Access:** the Railway service holds one fine-grained token, `GITHUB_REPO_DATA_KEY`, with Contents read and write on just the public repo and this private one. It's a Railway variable, so it never touches either repo. It expires after 366 days, so the owner renews it about once a year. When it expires, uploads fail with a 401, and the recorder logs that clearly.
   - **If Deribit approves** publishing, the files move to the public archive.
 - Cboe delayed option chains (personal, non-commercial use only)
 - Nasdaq's unofficial endpoints
@@ -305,9 +305,10 @@ revenue_day = market_price_per_hour(GPU model, market) × 24 × utilisation × (
 
 ## Owner to-dos
 
-- Create the public GitHub repo on your account, or let the builder create it with `gh`.
+- ~~Create the public GitHub repo.~~ Done 2026-11-04: `tao-calc-data`, with GitHub Pages on.
 - Create a Cloudflare account (free, no card) and connect Pages to the repo.
 - Optional: email info@deribit.com to ask for written approval to publish Deribit option data in a free, non-commercial open archive.
 - ~~Create the private archive repo.~~ Done 2026-11-02: `tao-calc-data-private`.
-- Create the fine-grained token `GH_TOKEN` and store it as a Railway variable. Add the public repo to the token once that repo exists.
+- ~~Create the token and store it in Railway.~~ Done: `GITHUB_REPO_DATA_KEY` on the Railway service `recorder`. **Still to do: add `tao-calc-data` to the token's repository access.**
+- Check the terms of the sources still archived privately (WhatToMine, NiceHash, MiningRigRentals, Vast, Clore, Lium, RunPod, Akash, io.net, Hyperliquid, CoinGecko), and add the ones that allow republishing to `publish_raw` in `tables.json`.
 - Add any free API keys yourself as Railway variables. Never paste them into chat or files. The Alpha Vantage key pasted into chat on 2026-10-31 should be regenerated, although this project doesn't need it.
