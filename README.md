@@ -24,7 +24,7 @@ Not financial advice. Earnings can be zero or negative.
 
 | Part | What | Where |
 |---|---|---|
-| `recorder/` | Python, run hourly by a Railway cron (`railway.json`). It fetches every source, archives the raw responses and writes `site-data/`. | Railway |
+| `recorder/` | Python, run hourly by a Railway cron. It fetches every source, archives the raw responses and writes `site-data/`. | Railway |
 | `site/` | Static TypeScript page. All the math runs in the browser (`site/src/calc.ts`), from `site-data/latest.json` read off this repo's raw URL. | GitHub Pages / Cloudflare Pages |
 | `tables.json` | Hand-kept tables: GPU specs and name aliases, algorithm names, platform fees (with sources), hosts' mining terms, halvings, subnet hardware needs, defaults. | both |
 
@@ -86,7 +86,7 @@ python3 -m http.server 8080                               # open http://localhos
 
 ### Deploying
 
-- **Recorder:** run `railway up` from the repo root. `railway.json` sets the Dockerfile and the hourly cron, `5 * * * *`.
+- **Recorder:** run `railway up --service recorder` from the repo root. The service settings are Dockerfile path `recorder/Dockerfile`, cron `5 * * * *` and restart policy never. They were set once through Railway's API (`serviceInstanceUpdate`) because Railway no longer reads `railway.json`.
   - The service needs `GITHUB_REPO_DATA_KEY`: a fine-grained token with Contents read and write on this repo and the private archive repo.
   - `PUBLIC_REPO` and `PRIVATE_REPO` are optional overrides.
 - **Site on GitHub Pages:** `.github/workflows/site.yml` deploys on pushes that change anything outside `site-data/`.
