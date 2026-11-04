@@ -49,11 +49,29 @@ The design is in [`docs/superpowers/specs/2026-10-31-gpu-calculator-design.md`](
   gh release download data-2026-11 -R mattiaskjellsson/tao-calc-data -p '2026-11-03T10Z.json.gz'
   python3 -c "import gzip,json; d=json.load(gzip.open('2026-11-03T10Z.json.gz')); print(list(d['sources']))"
   ```
-- **What's in the public archive:** raw data only from sources whose terms allow republishing (`publish_raw` in `tables.json`). Right now that's:
-  - Binance tickers, options marks and daily closes
-  - Bittensor metagraphs, trimmed to: netuid, name, `tao_in`, `alpha_in`, `alpha_out_emission`, burn, immunity, owner coldkey, and per-slot hotkey, coldkey, incentive and registration block
-- **The other sources** (WhatToMine, NiceHash, MiningRigRentals, the GPU rental markets, Hyperliquid and CoinGecko) are archived privately until their terms are checked. Figures derived from them do appear in `latest.json`.
-- **Deribit** option books and DVOL are archived privately only. Deribit's terms allow personal use only, including derived data, so nothing from Deribit reaches this repo or the site.
+- **What's in the public archive:** raw data only from sources whose terms allow republishing (`publish_raw` in `tables.json`, see the table below). Bittensor metagraphs are trimmed to:
+  - netuid, name, `tao_in`, `alpha_in`, `alpha_out_emission`, burn, immunity and owner coldkey
+  - per slot: hotkey, coldkey, incentive and registration block
+- **Everything else** goes to a private archive. Figures derived from those sources still appear in `latest.json`.
+
+### Sources and their terms (checked 2026-11-04)
+
+| Source | Raw data public? | Terms, and why |
+|---|---|---|
+| Binance (tickers, options marks, daily closes) | yes | [Vision Dataset Terms](https://data.binance.vision/Binance_Vision-Terms_of_Use.pdf): CC BY-NC-SA 4.0, non-commercial. |
+| Bittensor (Finney chain) | yes | Public blockchain data. |
+| NiceHash (prices, order books, device benchmarks) | yes | [Terms](https://www.nicehash.com/terms): no clause restricts public market data. The redistribution clause covers their software. |
+| Hyperliquid (5-minute candles) | yes | On-chain market data. Their docs say "You can use the API to record additional historical data sets yourself" ([historical data](https://hyperliquid.gitbook.io/hyperliquid-docs/historical-data)). |
+| WhatToMine (coin network stats) | no | [Terms](https://whattomine.com/policy-terms): the API may not be used "for any application that replicates or attempts to replace the essential user experience of whattomine.com". **Open question, see below.** |
+| MiningRigRentals | no | Their [API help](https://www.miningrigrentals.com/helpcenter/API) allows "legitimate integrations, tools, analysis", but the [ToS](https://www.miningrigrentals.com/tos) needs written permission to "reproduce, distribute". |
+| CoinGecko (BTC/TAO fallback) | no | [API terms](https://www.coingecko.com/en/api_terms): no redistribution without a paid licence. |
+| Clore, Lium | no | [Clore terms](https://clore.ai/terms-and-conditions) and [Lium terms](https://lium.io/terms) grant only a limited licence and say nothing about data reuse. Listings include host identifiers. |
+| Akash, io.net | no | Terms pages not found. Private until checked. |
+| Vast | **not collected** | [Terms of Use](https://vast.ai/terms) (2026-09-01) forbid automated retrieval, and any "index, benchmark, pricing-comparison service" without a written agreement. Listed in `skip_sources`. |
+| RunPod | **not collected** | [Terms of Service](https://www.runpod.io/legal/terms-of-service) (2026-03-24) forbid access "through automated or non-human means" and compiling databases. Listed in `skip_sources`. |
+| Deribit | private only | Personal use only, including derived data, so nothing from Deribit reaches this repo or the site. |
+
+To start collecting Vast or RunPod again, get their written permission and remove them from `skip_sources`.
 
 ### Licence and credit
 

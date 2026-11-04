@@ -114,12 +114,14 @@ def fetch_all(tables: dict, now: datetime, daily: bool) -> tuple[dict, dict]:
     runpod_q = {"query": "{ gpuTypes { id displayName memoryInGb lowestPrice(input:{gpuCount:1})"
                          "{ minimumBidPrice uninterruptablePrice } } }"}
     books = sorted({a["nh_mkt"] for a in tables["algos"].values() if a.get("nh_mkt")})
-    vast_models = {gid: g["vast"] for gid, g in tables["gpus"].items() if g.get("vast")}
+    skip = set(tables.get("skip_sources", {}))  # sources whose terms forbid automated collection
+    vast_models = {} if "vast" in skip else {gid: g["vast"] for gid, g in tables["gpus"].items() if g.get("vast")}
 
     with ThreadPoolExecutor(max_workers=16) as pool:
         chain = pool.submit(safe, bittensor_metagraphs)
         jobs = {k: pool.submit(safe, get, u) for k, u in {**simple, **private_urls}.items()}
-        jobs["runpod"] = pool.submit(safe, get, "https://api.runpod.io/graphql", runpod_q)
+        if "runpod" not in skip:
+            jobs["runpod"] = pool.submit(safe, get, "https://api.runpod.io/graphql", runpod_q)
         book_jobs = {a: pool.submit(safe, get, f"{NICEHASH}/hashpower/orderBook?algorithm={a}&size=500") for a in books}
         vast_jobs = {gid: pool.submit(safe, vast, name) for gid, name in vast_models.items()}
         hl_jobs = {c: pool.submit(safe, hl_candles, c, now_ms) for c in HL_COINS}
@@ -136,7 +138,8 @@ def fetch_all(tables: dict, now: datetime, daily: bool) -> tuple[dict, dict]:
 
         public = {k: v for k, v in res.items() if k not in private_urls}
         public["nicehash_books"] = {a: f.result() for a, f in book_jobs.items()}
-        public["vast"] = {gid: f.result() for gid, f in vast_jobs.items()}
+        if vast_jobs:
+            public["vast"] = {gid: f.result() for gid, f in vast_jobs.items()}
         public["hyperliquid"] = {c: f.result() for c, f in hl_jobs.items()}
         public["binance_klines"] = {t: f.result() for t, f in kl_jobs.items()}
         public["bittensor"] = chain.result()

@@ -161,4 +161,5 @@ def test_only_cleared_sources_go_to_the_public_archive():
     public, held = split_snapshot({"binance_24h": [1], "bittensor": [2], "clore": {"x": 1}}, ["binance_24h", "bittensor"])
     assert public == {"binance_24h": [1], "bittensor": [2]}
     assert held == {"clore": {"x": 1}}
-    assert TABLES["publish_raw"] == ["binance_24h", "binance_options", "binance_klines", "bittensor"]
+    assert "clore" not in TABLES["publish_raw"] and "wtm_gpu" not in TABLES["publish_raw"]  # terms don't allow it
+    assert {"binance_24h", "bittensor", "nicehash_books", "hyperliquid"} <= set(TABLES["publish_raw"])
