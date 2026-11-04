@@ -63,6 +63,8 @@
     "progpowz":   {"wtm": ["ProgPowZ"],          "nh_dev": null,              "nh_mkt": null,              "mrr": "progpowz"},
     "verthash":   {"wtm": ["Verthash"],          "nh_dev": null,              "nh_mkt": null,              "mrr": "verthash"}
   },
+  "publish_raw": ["binance_24h", "binance_options", "binance_klines", "bittensor"],
+  "publish_raw_note": "Sources whose raw hourly data may go in the public archive. Binance: CC BY-NC-SA 4.0 (checked 2026-11-02). Bittensor: public chain data. Add a source here only after checking its terms; until then its raw data goes to the private archive.",
   "fees": {
     "vast":     {"fee": 0.15,   "confirmed": false, "src": "https://vast.ai/article/june-2024-product-update", "note": "Vast replaced its host fee with an unstated internal surcharge; third parties say ~15%."},
     "clore":    {"fee": 0.10,   "confirmed": false, "src": "https://docs.clore.ai/for-renters/fee-structure.md", "note": "10% on-demand base fee; +15% hoster fee when paid in BTC/USDT/USDC instead of CLORE."},

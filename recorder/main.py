@@ -90,6 +90,12 @@ def snapshot(now: datetime, sources: dict) -> bytes:
     return gzip.compress(json.dumps({"ts": now.isoformat(), "sources": sources}, default=str).encode())
 
 
+def split_snapshot(sources: dict, publish_raw: list[str]) -> tuple[dict, dict]:
+    """Raw data goes public only for sources whose terms allow it; the rest is kept in the private archive."""
+    return ({k: v for k, v in sources.items() if k in publish_raw},
+            {k: v for k, v in sources.items() if k not in publish_raw})
+
+
 def main() -> int:
     token = os.environ.get("GITHUB_REPO_DATA_KEY", "")
     if not token and not DRY_RUN:
@@ -115,7 +121,8 @@ def main() -> int:
     errors = [k for k, v in public.items() if isinstance(v, dict) and "error" in v]
     print(f"fetched: {len(public)} public sources, errors: {errors or 'none'}", flush=True)
 
-    pub_gz, priv_gz = snapshot(now, public), snapshot(now, private)
+    open_raw, held_raw = split_snapshot(public, tables["publish_raw"])
+    pub_gz, priv_gz = snapshot(now, open_raw), snapshot(now, held_raw | private)
     latest = json.dumps(reduce(public, tables, now), separators=(",", ":"), allow_nan=False).encode()
     bench = benchmarks(public["nicehash_devices"]["devices"], tables, now) \
         if isinstance(public.get("nicehash_devices"), dict) and "devices" in public["nicehash_devices"] else None

@@ -153,3 +153,12 @@ def test_binance_price_used_only_when_it_agrees_with_whattomine():
     assert math.isclose(out["usd"]["XMR"], 0.0078 * 78000)  # a frozen delisted ticker is ignored
     assert out["vol"]["RVN"]["kind"] == "realised" and out["vol"]["XMR"]["kind"] == "assumed"
     assert out["usd"]["BTC"] == 78000
+
+
+def test_only_cleared_sources_go_to_the_public_archive():
+    from main import split_snapshot
+
+    public, held = split_snapshot({"binance_24h": [1], "bittensor": [2], "clore": {"x": 1}}, ["binance_24h", "bittensor"])
+    assert public == {"binance_24h": [1], "bittensor": [2]}
+    assert held == {"clore": {"x": 1}}
+    assert TABLES["publish_raw"] == ["binance_24h", "binance_options", "binance_klines", "bittensor"]
