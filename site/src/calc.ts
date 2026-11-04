@@ -216,7 +216,8 @@ export function gpuRows(inp: Inputs, latest: Latest, bench: Bench, tables: Table
       if (inp.util == null && q.util == null) flags.push(`utilisation assumed ${pct(u0)}`);
       rows.push({
         kind: "rent", label: `Rent out on ${MARKET_NAMES[m] ?? m}`, where: MARKET_NAMES[m] ?? m,
-        netDay: net(u0), p10: net(lo) * H, p50: net(u0) * H, p90: net(hi) * H,
+        // When power costs more than renting earns, more utilisation is worse, so order the band's ends.
+        netDay: net(u0), p10: Math.min(net(lo), net(hi)) * H, p50: net(u0) * H, p90: Math.max(net(lo), net(hi)) * H,
         breakEvenPrice: Number.isFinite(be) ? { value: be, pctFromNow: be / q.med - 1, unit: "$/h" } : undefined,
         breakEvenKwh: Math.max(0, (q.med * 24 * u0 * (1 - fee)) / (((gpu.tdp * u0 + idle * (1 - u0)) / 1000) * 24)),
         flags,

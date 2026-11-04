@@ -120,3 +120,9 @@ test("buy rows: margin from the book, capped when exhausted", () => {
   assert.ok(huge && huge.flags.some((f) => f.startsWith("book exhausted: only $") && f.endsWith("of $1,000,000,000/day fillable")));
   assert.ok(finite(rows));
 });
+
+test("rent-out range stays ordered when power costs more than renting earns", () => {
+  const rows = gpuRows({ ...own, kwh: 3 }, latest(), bench, tables, NOW).filter((r) => r.kind === "rent");
+  assert.ok(rows.length > 0);
+  for (const r of rows) assert.ok(r.p10 <= r.p50 && r.p50 <= r.p90, `${r.label}: ${r.p10} ${r.p50} ${r.p90}`);
+});

@@ -49,6 +49,13 @@ def get_file(repo: str, path: str, token: str) -> tuple[bytes | None, str | None
         raise
 
 
+def exists(repo: str, path: str, token: str) -> bool:
+    try:
+        return get_file(repo, path, token)[1] is not None
+    except Exception:  # no access yet (e.g. the token doesn't cover this repo) counts as missing
+        return False
+
+
 def put_file(repo: str, path: str, data: bytes, msg: str, token: str) -> None:
     _, sha = get_file(repo, path, token)
     body = {"message": msg, "content": base64.b64encode(data).decode()} | ({"sha": sha} if sha else {})
@@ -116,7 +123,7 @@ def main() -> int:
     if DRY_RUN:
         have_bench = os.path.exists(os.path.join(OUT, "site-data", "benchmarks.json"))
     else:
-        have_bench = get_file(PUBLIC_REPO, "site-data/benchmarks.json", token)[1] is not None
+        have_bench = exists(PUBLIC_REPO, "site-data/benchmarks.json", token)
     public, private = fetch_all(tables, now, daily=now.hour == 0 or not have_bench)
     errors = [k for k, v in public.items() if isinstance(v, dict) and "error" in v]
     print(f"fetched: {len(public)} public sources, errors: {errors or 'none'}", flush=True)
@@ -141,7 +148,7 @@ def main() -> int:
     step("private snapshot", lambda: upload(PRIVATE_REPO, tag, name, priv_gz, token))
     step("latest.json", lambda: put_file(PUBLIC_REPO, "site-data/latest.json", latest, f"data: {now:%Y-%m-%d %H}Z", token))
     daily_path = f"site-data/daily/{now:%Y-%m-%d}.json"
-    step("daily", lambda: "exists" if get_file(PUBLIC_REPO, daily_path, token)[1]
+    step("daily", lambda: "exists" if exists(PUBLIC_REPO, daily_path, token)
          else put_file(PUBLIC_REPO, daily_path, latest, f"data: daily {now:%Y-%m-%d}", token))
     if bench:
         def bench_step():
