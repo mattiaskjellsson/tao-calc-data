@@ -96,6 +96,13 @@ test("winner-take-all subnets earn 0 for a new slot and say so", () => {
   assert.ok(big.flags.some((f) => f.includes("50% of slots earn 0")));
 });
 
+test("the Bittensor headline is weighted by the share of slots that earn", () => {
+  const big = gpuRows(own, latest(), bench, tables, NOW).find((r) => r.label.includes("Big")) as Row;
+  const taoDay = 0.5 * 2; // half the slots earn; p25 of earners is 2 TAO/day
+  const cost = (450 / 1000) * 24 * 0.1;
+  assert.ok(Math.abs(big.netDay - (taoDay * 230 - cost - (0.5 * 230) / 30)) < 1e-9);
+});
+
 test("renting mode uses the cheapest market and adds $/TFLOP-hour", () => {
   const rows = gpuRows({ ...own, mode: "rent" }, latest(), bench, tables, NOW);
   const pow = rows.find((r) => r.kind === "pow") as Row;
@@ -110,6 +117,6 @@ test("buy rows: margin from the book, capped when exhausted", () => {
   const nh = rows.find((r) => r.venue === "nicehash") as ReturnType<typeof buyRows>[number];
   assert.equal(nh.coin, "Ravencoin");
   const huge = buyRows({ ...own, mode: "rent", budget: 1e9 }, latest(), tables).find((r) => r.venue === "nicehash");
-  assert.ok(huge && huge.flags.includes("book exhausted"));
+  assert.ok(huge && huge.flags.some((f) => f.startsWith("book exhausted: only $") && f.endsWith("of $1,000,000,000/day fillable")));
   assert.ok(finite(rows));
 });

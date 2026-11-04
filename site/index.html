@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GPU Earnings Calculator</title>
+  <meta name="description" content="What's the most profitable thing to do with this GPU right now: mine a coin, run a Bittensor miner, or rent it out.">
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <header>
+    <h1>What can my GPU do?</h1>
+    <p class="lede">Mining a proof-of-work coin, running a Bittensor miner or renting the card out: ranked by what you'd net over the horizon you pick. Updated hourly.</p>
+  </header>
+
+  <form id="controls" autocomplete="off">
+    <fieldset class="mode">
+      <legend class="sr">Mode</legend>
+      <label><input type="radio" name="mode" value="own" checked> I own a card</label>
+      <label><input type="radio" name="mode" value="rent"> I'd rent one</label>
+    </fieldset>
+    <label>GPU <select name="gpu"></select></label>
+    <label class="own-only">Electricity <span class="unit">$/kWh</span> <input name="kwh" type="number" min="0" step="0.01" value="0.15" inputmode="decimal"></label>
+    <label>Horizon
+      <select name="horizon">
+        <option value="1">1 day</option><option value="7">7 days</option><option value="30" selected>30 days</option>
+        <option value="90">90 days</option><option value="365">365 days</option>
+      </select>
+    </label>
+    <details class="more">
+      <summary>Assumptions</summary>
+      <label>Bittensor rank <span class="unit">percentile of earners</span> <input name="rankPct" type="number" min="1" max="100" step="1" value="25"></label>
+      <label class="own-only">Rent-out utilisation <span class="unit">% (blank = market signal)</span> <input name="util" type="number" min="0" max="100" step="5" placeholder="market"></label>
+      <label>Pool fee <span class="unit">%</span> <input name="poolFee" type="number" min="0" max="20" step="0.5" value="1"></label>
+    </details>
+  </form>
+
+  <div id="banner" role="status" hidden></div>
+
+  <main>
+    <section>
+      <h2 id="gpu-title">What this card can do</h2>
+      <table id="rows" class="results">
+        <thead><tr><th>Option</th><th class="num">Net $/day</th><th class="num">Net over horizon <span class="unit">p10 · <b>p50</b> · p90</span></th><th>Break-even</th><th>Flags</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <p class="empty" id="rows-empty" hidden>No options for this card with the current data.</p>
+      <button type="button" id="show-all" hidden></button>
+    </section>
+
+    <section id="buy" class="rent-only">
+      <h2>Or buy hashrate directly</h2>
+      <p class="note">No GPU involved: rent hashrate on NiceHash or MiningRigRentals and point it at the best coin for that algorithm. Ranked by margin.</p>
+      <label class="budget">Budget <span class="unit">$/day</span> <input form="controls" name="budget" type="number" min="1" step="1" value="10"></label>
+      <table id="buy-rows" class="results">
+        <thead><tr><th>Algorithm → coin</th><th>Venue</th><th class="num">Margin</th><th class="num">Spend → revenue /day</th><th>Flags</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
+  </main>
+
+  <footer>
+    <p id="stamp">Loading data…</p>
+    <p>Not financial advice. Estimates from public market data. Earnings can be zero or negative, and past rates don't hold.</p>
+    <p>Prices and options data from <a href="https://data.binance.vision">Binance Vision</a>, used under <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a>; no endorsement implied. Also WhatToMine, NiceHash, MiningRigRentals, Vast, Clore, Lium, RunPod, Akash, io.net, CoinGecko and the Bittensor chain.</p>
+    <p>All math runs in your browser. Open data and code: <a href="https://github.com/mattiaskjellsson/tao-calc-data">github.com/mattiaskjellsson/tao-calc-data</a>.</p>
+  </footer>
+  <script type="module" src="./dist/app.js"></script>
+</body>
+</html>

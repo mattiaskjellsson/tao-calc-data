@@ -47,7 +47,7 @@
     "beamv3":     {"wtm": ["BeamHashIII"],       "nh_dev": "BEAMV3",          "nh_mkt": "BEAMV3",          "mrr": null},
     "octopus":    {"wtm": ["Octopus"],           "nh_dev": "OCTOPUS",         "nh_mkt": "OCTOPUS",         "mrr": "octopus"},
     "nexapow":    {"wtm": ["NexaPow"],           "nh_dev": "NEXAPOW",         "nh_mkt": "NEXAPOW",         "mrr": "nexapow"},
-    "fishhash":   {"wtm": ["FishHash"],          "nh_dev": "IRONFISH",        "nh_mkt": "FISHHASH",        "mrr": "fishhash"},
+    "fishhash":   {"wtm": ["FishHash"],          "nh_dev": null,        "nh_mkt": "FISHHASH",        "mrr": "fishhash"},
     "cuckoocycle":{"wtm": ["CuckooCycle"],       "nh_dev": "CUCKOOCYCLE",     "nh_mkt": null,              "mrr": null},
     "kheavyhash": {"wtm": ["kHeavyHash"],        "nh_dev": "KHEAVYHASH",      "nh_mkt": "KHEAVYHASH",      "mrr": "kheavyhash"},
     "blake3":     {"wtm": ["Blake3"],            "nh_dev": "ALEPHIUM",        "nh_mkt": "ALEPHIUM",        "mrr": "blake3aleph"},

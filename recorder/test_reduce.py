@@ -139,3 +139,17 @@ def test_junk_records_fail_only_their_market():
 
 def test_nicehash_book_zero_factor():
     assert nicehash_book([{"price": "0.06", "acceptedSpeed": "0.02"}], 0, 1e12) == []
+
+
+def test_binance_price_used_only_when_it_agrees_with_whattomine():
+    raw = raw_min(binance_24h=[{"symbol": "BTCUSDT", "lastPrice": "78000"}, {"symbol": "RVNUSDT", "lastPrice": "0.0157"},
+                               {"symbol": "XMRUSDT", "lastPrice": "118"}],
+                  binance_klines={"RVN": [1.0, 1.1] * 10, "XMR": [1.0, 1.1] * 10})
+    raw["wtm_gpu"]["coins"]["Monero"] = {**wtm("Monero")[1], "tag": "XMR", "algorithm": "RandomX", "exchange_rate": 0.0078}
+    raw["wtm_gpu"]["coins"]["Bitcoin"] = {**wtm("Bitcoin")[1], "tag": "BTC", "algorithm": "SHA-256", "exchange_rate": 78100,
+                                          "exchange_rate_curr": "BTC"}  # WhatToMine labels it BTC; the value is USD
+    out = reduce(raw, TABLES, NOW)
+    assert out["usd"]["RVN"] == 0.0157  # within 10% of WhatToMine's 0.0156: Binance's fresher price
+    assert math.isclose(out["usd"]["XMR"], 0.0078 * 78000)  # a frozen delisted ticker is ignored
+    assert out["vol"]["RVN"]["kind"] == "realised" and out["vol"]["XMR"]["kind"] == "assumed"
+    assert out["usd"]["BTC"] == 78000

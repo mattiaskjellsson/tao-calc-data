@@ -1,6 +1,7 @@
 """Fetch every source once. Each source is isolated: a failure becomes {"error": ...} and never stops the others."""
 import ipaddress
 import json
+import socket
 import time
 import urllib.error
 import urllib.parse
@@ -24,10 +25,10 @@ class SafeRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         u = urllib.parse.urlsplit(newurl)
         host = u.hostname or ""
-        try:
-            internal = not ipaddress.ip_address(host).is_global
-        except ValueError:
-            internal = host == "localhost" or host.endswith(".internal") or "." not in host
+        try:  # check every address the name resolves to, so a public-looking name can't point inside
+            internal = not all(ipaddress.ip_address(a[4][0]).is_global for a in socket.getaddrinfo(host, 443))
+        except (OSError, ValueError):
+            internal = True
         if u.scheme != "https" or internal:
             raise urllib.error.HTTPError(newurl, code, f"refused redirect to {u.scheme}://{host}", headers, fp)
         return super().redirect_request(req, fp, code, msg, headers, newurl)

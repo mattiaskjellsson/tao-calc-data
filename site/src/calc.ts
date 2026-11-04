@@ -172,7 +172,9 @@ export function gpuRows(inp: Inputs, latest: Latest, bench: Bench, tables: Table
     if (hw && typeof hw !== "boolean" && hw.gpu && hw.vram && gpu.vram < hw.vram) continue;
     // Like tao's scan (its "tenth" earner): with fewer than 10 earners a new slot is assumed to earn nothing.
     const winnerTakeAll = sn.earners < 10;
-    const taoDay = winnerTakeAll ? 0 : interpRank(sn.p, inp.rankPct);
+    const atRank = winnerTakeAll ? 0 : interpRank(sn.p, inp.rankPct);
+    // The rank is among earners; weighting by today's earning share keeps a 95%-zero subnet from looking safe.
+    const taoDay = atRank * (1 - sn.zero_share);
     const burnUsd = sn.burn_tao * TAO, watts = gpu.tdp;
     const s = settle(inp, latest, tables, { units: taoDay * H, tag: "TAO", costDay: powerCost(watts), fixedCost: burnUsd, perDayUnits: taoDay });
     const flags = [`${pct(sn.zero_share)} of slots earn 0`];
@@ -185,7 +187,8 @@ export function gpuRows(inp: Inputs, latest: Latest, bench: Bench, tables: Table
       netDay: s.netDay - burnUsd / H, p10: s.p10, p50: s.p50, p90: s.p90,
       breakEvenPrice: s.breakEvenPrice, breakEvenKwh: kwhBreakEven(taoDay * H * TAO, burnUsd, watts), flags,
       detail: {
-        "at your rank": `p${inp.rankPct} of earners: ${taoDay.toPrecision(3)} TAO/day`,
+        "at your rank": `p${inp.rankPct} of earners: ${atRank.toPrecision(3)} TAO/day ($${money(atRank * TAO)}/day) if you earn`,
+        "chance of earning": `${pct(1 - sn.zero_share)} (share of slots earning now); headline = rank × chance`,
         "rank spread": `p10–p90 of earners: $${money(sn.p.p10 * TAO)}–$${money(sn.p.p90 * TAO)}/day (top $${money(sn.p.top * TAO)})`,
         earners: `${sn.earners} of ${sn.n} slots`, registration: `${sn.burn_tao.toPrecision(3)} TAO ($${money(burnUsd)})`,
         immunity: `${sn.immunity_blocks} blocks (~${(sn.immunity_blocks / 7200).toFixed(1)} days)`,
@@ -248,7 +251,7 @@ export function buyRows(inp: Inputs, latest: Latest, tables: Tables): BuyRow[] {
       const spend = fill.hs * fill.priceBtc * (1 + fee) * BTC, revenue = fill.hs * best.usdPerHs;
       if (spend > 0) out.push({
         algo, venue: "nicehash", coin: best.coin.name, marginPct: (revenue - spend) / spend, spend, revenue,
-        flags: fill.exhausted ? ["book exhausted"] : [],
+        flags: fill.exhausted ? [`book exhausted: only $${money(spend)} of $${inp.budget.toLocaleString("en-US")}/day fillable`] : [],
         detail: { bought: `${fill.hs.toPrecision(3)} H/s at ${(fill.priceBtc * 1e12).toPrecision(3)} BTC/TH/day`, fee: pct(fee) },
       });
     }

@@ -110,10 +110,10 @@ def _prices(raw: dict) -> dict[str, float]:
     return {k: v for k, v in usd.items() if v}
 
 
-def _coins(raw: dict, tables: dict, binance: dict[str, float]) -> tuple[list, dict]:
+def _coins(raw: dict, tables: dict, binance: dict[str, float]) -> tuple[list, dict, set]:
     algo_of = {w: aid for aid, a in tables["algos"].items() for w in a["wtm"]}
     cap = tables["defaults"]["growth_cap_day"]
-    coins, usd, seen = [], {}, set()
+    coins, usd, seen, verified = [], {}, set(), {"BTC", "TAO"}
     for lst in ("wtm_gpu", "wtm_asic"):
         src = raw.get(lst)
         if not src or failed(src):
@@ -122,7 +122,12 @@ def _coins(raw: dict, tables: dict, binance: dict[str, float]) -> tuple[list, di
             aid = algo_of.get(c["algorithm"])
             if name.startswith("Nicehash") or aid is None or name in seen:
                 continue
-            price = binance.get(c["tag"]) or float(c.get("exchange_rate") or 0) * binance.get("BTC", 0)
+            rate = float(c.get("exchange_rate") or 0)
+            # WhatToMine quotes rates in BTC, except Bitcoin's own row, which is in USD.
+            wtm_price = rate if c["tag"] == "BTC" or c.get("exchange_rate_curr") == "USD" else rate * binance.get("BTC", 0)
+            # Binance tickers can be another token with the same symbol, or a delisted coin frozen at its last price.
+            bn = binance.get(c["tag"], 0)
+            price = bn if wtm_price > 0 and 0.9 <= bn / wtm_price <= 1.1 else wtm_price
             nethash, bt, reward = float(c.get("nethash") or 0), float(c.get("block_time") or 0), float(c.get("block_reward") or 0)
             if min(price, nethash, bt, reward) <= 0:
                 continue
@@ -131,9 +136,11 @@ def _coins(raw: dict, tables: dict, binance: dict[str, float]) -> tuple[list, di
             growth = max(-cap, min(cap, math.log(d / d24))) if d > 0 and d24 > 0 else 0.0
             seen.add(name)
             usd[c["tag"]] = price
+            if price == bn:
+                verified.add(c["tag"])
             coins.append({"name": name, "tag": c["tag"], "algo": aid, "block_time": bt, "block_reward": sig(reward),
                           "nethash": sig(nethash), "growth_day": sig(growth, 4), "list": lst[4:]})
-    return coins, usd
+    return coins, usd, verified
 
 
 class _Acc:
@@ -272,14 +279,14 @@ def _mrr(raw: dict, tables: dict) -> dict:
     return out
 
 
-def _vol(raw: dict, usd: dict, now: datetime, fallback: float) -> dict:
+def _vol(raw: dict, usd: dict, verified: set, now: datetime, fallback: float) -> dict:
     iv = {}
     if raw.get("binance_options") and not failed(raw["binance_options"]):
         iv = atm_iv(raw["binance_options"], usd, int(now.timestamp() * 1000))
     klines = raw.get("binance_klines") or {}
     out = {}
     for tag in usd:
-        closes = klines.get(tag) if not failed(klines) else None
+        closes = klines.get(tag) if not failed(klines) and tag in verified else None
         if tag in iv:
             out[tag] = {"sigma": sig(iv[tag], 3), "kind": "implied"}
         elif isinstance(closes, list) and len(closes) >= 10 and realised_vol(closes) > 0:
@@ -291,8 +298,8 @@ def _vol(raw: dict, usd: dict, now: datetime, fallback: float) -> dict:
 
 def reduce(raw: dict, tables: dict, now: datetime) -> dict:
     binance = _prices(raw)
-    coins, coin_usd = _coins(raw, tables, binance)
-    usd = {k: binance[k] for k in ("BTC", "TAO") if k in binance} | coin_usd
+    coins, coin_usd, verified = _coins(raw, tables, binance)
+    usd = coin_usd | {k: binance[k] for k in ("BTC", "TAO") if k in binance}  # the market's BTC and TAO always win
     rentals, unmatched, bad = _rentals(raw, tables)
     sources = {k: ({"ok": False, "error": str(v["error"])[:200]} if failed(v) else {"ok": True}) for k, v in raw.items()}
     sources |= {k: {"ok": False, "error": e} for k, e in bad.items()}
@@ -311,7 +318,7 @@ def reduce(raw: dict, tables: dict, now: datetime) -> dict:
         "ts": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "sources": sources,
         "usd": {k: sig(v) for k, v in usd.items()},
-        "vol": _vol(raw, usd, now, tables["defaults"]["vol_fallback"]),
+        "vol": _vol(raw, usd, verified, now, tables["defaults"]["vol_fallback"]),
         "coins": coins,
         "nicehash": _nicehash(raw, tables),
         "mrr": _mrr(raw, tables),
