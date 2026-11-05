@@ -314,7 +314,9 @@ export function buyRows(inp: Inputs, latest: Latest, tables: Tables): BuyRow[] {
   }
   for (const r of out)
     if (r.marginPct > 1) r.flags.push("margin over +100%: usually an illiquid coin or a stale price, check before trusting");
-  return out.filter((r) => Number.isFinite(r.marginPct)).sort((a, b) => b.marginPct - a.marginPct);
+  // Rows that can't fill half the budget (a nearly empty market) rank below ones that can, whatever their margin.
+  const thin = (r: BuyRow) => (r.spend < inp.budget / 2 ? 1 : 0);
+  return out.filter((r) => Number.isFinite(r.marginPct)).sort((a, b) => thin(a) - thin(b) || b.marginPct - a.marginPct);
 }
 
 /** 4810 H/s → "4.81 kH/s" (for Sol algorithms read Sol/s). */

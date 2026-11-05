@@ -220,3 +220,12 @@ test("buy rows never price hashrate below what NiceHash pays sellers, and flag h
   const wild = buyRows({ ...own, mode: "rent", budget: 10 }, cheap, tables).find((r) => r.venue === "nicehash");
   assert.ok(wild && wild.marginPct > 1 && wild.flags.some((f) => f.startsWith("margin over +100%")));
 });
+
+test("buy rows that can't fill half the budget sort below ones that can", () => {
+  const L = latest();
+  L.coins.push({ name: "Thin", tag: "BTC", algo: "nexapow", block_time: 60, block_reward: 1, nethash: 1e6, growth_day: 0, list: "gpu" });
+  L.nicehash.nexapow = { pay: 1e-16, book: [[1e-16, 10]] }; // a nearly empty market with a huge margin
+  const rows = buyRows({ ...own, mode: "rent", budget: 10 }, L, tables);
+  const thin = rows.findIndex((r) => r.algo === "nexapow"), full = rows.findIndex((r) => r.algo === "kawpow" && r.venue === "nicehash");
+  assert.ok(rows[thin].marginPct > rows[full].marginPct && thin > full);
+});
