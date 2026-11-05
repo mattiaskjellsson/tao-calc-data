@@ -1,4 +1,4 @@
-import { buyRows, gpuRows, priceCone, rentCost, sortRows, MARKET_NAMES, type Bench, type BuyRow, type Inputs, type Latest, type Row, type SortKey, type Tables } from "./calc.js";
+import { buyRows, gpuRows, priceCone, rentCost, sortRows, MARKET_NAMES, type Bench, type BuyRow, type Inputs, type Latest, type Row, type SortKey, type Tables, type Alpha } from "./calc.js";
 
 const DATA = new URLSearchParams(location.search).get("data") ?? "https://raw.githubusercontent.com/mattiaskjellsson/tao-calc-data/main/site-data/";
 const STALE_HOURS = 3;
@@ -14,7 +14,7 @@ const usd = (x: number) => {
 const signed = (x: number) => `<span class="${x >= 0 ? "pos" : "neg"}">${usd(x)}</span>`;
 const pct = (x: number) => `${x >= 0 ? "+" : "−"}${Math.abs(Math.round(x * 100))}%`;
 
-let tables: Tables, latest: Latest, bench: Bench;
+let tables: Tables, latest: Latest, bench: Bench, alpha: Alpha | undefined;
 let showAll = false;
 let desc = true; // clicking the active column header again flips this
 const open = new Set<string>();
@@ -57,7 +57,7 @@ function breakEven(r: Row, mode: string) {
 
 function renderRows(inp: Inputs) {
   const f = new FormData(form), key = String(f.get("sort") ?? "p50") as SortKey, minChance = Number(f.get("minChance") ?? 0);
-  const all = gpuRows(inp, latest, bench, tables, new Date()).filter((r) => r.chance >= minChance);
+  const all = gpuRows(inp, latest, bench, tables, new Date(), alpha).filter((r) => r.chance >= minChance);
   const nonGpu = all.filter((r) => r.usesGpu === false).length;
   const rows = sortRows(f.get("nonGpu") === "on" ? all : all.filter((r) => r.usesGpu !== false), key, desc);
   $<HTMLElement>("#nongpu-count").textContent = nonGpu ? `(${nonGpu})` : "";
@@ -163,6 +163,7 @@ async function main() {
     [tables, latest, bench] = await Promise.all([
       getJson<Tables>("./dist/tables.json"), getJson<Latest>(DATA + "latest.json"), getJson<Bench>(DATA + "benchmarks.json"),
     ]);
+    alpha = await getJson<Alpha>(DATA + "alpha.json").catch(() => undefined); // optional: written once a day
   } catch (e) {
     banner(`Couldn't load the data (${esc((e as Error).message)}). Try again in a minute.`);
     $<HTMLElement>("#stamp").textContent = "No data loaded.";

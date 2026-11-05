@@ -158,7 +158,8 @@ def _coins(raw: dict, tables: dict, binance: dict[str, float]) -> tuple[list, di
             if price == bn:
                 verified.add(c["tag"])
             coins.append({"name": name, "tag": c["tag"], "algo": aid, "block_time": bt, "block_reward": sig(reward),
-                          "nethash": sig(nethash), "growth_day": sig(growth, 4), "list": lst[4:]})
+                          "nethash": sig(nethash), "growth_day": sig(growth, 4), "list": lst[4:],
+                          "vol_btc": sig(float(c.get("exchange_rate_vol") or 0), 4), "lagging": bool(c.get("lagging"))})
     return coins, usd, verified
 
 
@@ -371,3 +372,15 @@ def benchmarks(devices: list, tables: dict, now: datetime) -> dict:
         if algos:
             gpus[gid] = algos
     return {"ts": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "gpus": gpus}
+
+
+def alpha_stats(hist: dict, now: datetime) -> dict:
+    """Each subnet's alpha price (TAO per alpha) over the last 30 daily blocks: realised volatility and the change."""
+    out = {}
+    for netuid, taos in hist["tao_in"].items():
+        alphas = hist["alpha_in"].get(netuid, [])
+        prices = [t / a for t, a in zip(taos, alphas) if t > 0 and a > 0]
+        if len(prices) < 3:
+            continue
+        out[netuid] = {"vol": sig(realised_vol(prices), 3), "change30": sig(prices[-1] / prices[0] - 1, 3)}
+    return {"ts": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "subnets": out}

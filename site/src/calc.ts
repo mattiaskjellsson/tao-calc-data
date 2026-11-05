@@ -10,9 +10,10 @@ export type Tables = {
   halvings: Record<string, [string, number][] | { decay_per_year: number } | boolean>;
   subnet_hw: Record<string, { gpu: boolean; vram?: number; gpus?: string[]; note?: string; skip?: boolean } | boolean>;
   defaults: { pool_fee: number; util: number; util_band: number; rank_pct: number; buy_fee_nicehash: number; budget: number;
-    vol_fallback: number; growth_cap_day: number; idle_frac: number; kwh: number };
+    vol_fallback: number; growth_cap_day: number; idle_frac: number; kwh: number; max_volume_share: number; thin_market_usd: number };
 };
-export type Coin = { name: string; tag: string; algo: string; block_time: number; block_reward: number; nethash: number; growth_day: number; list: string };
+export type Coin = { name: string; tag: string; algo: string; block_time: number; block_reward: number; nethash: number; growth_day: number; list: string;
+  vol_btc?: number; lagging?: boolean }; // vol_btc: 24 h trading volume in BTC (WhatToMine)
 export type Subnet = { netuid: number; name: string; price_tao: number; pool_tao_day: number; burn_tao: number; immunity_blocks: number;
   n: number; earners: number; zero_share: number; p: { p10: number; p25: number; p50: number; p75: number; p90: number; top: number };
   top3_share?: number; sell_pressure?: number; tao_in?: number;
@@ -108,12 +109,13 @@ export function rentCost(gpu: string, latest: Latest, tables: Tables): { usdHour
 const money = (x: number) => (Math.abs(x) >= 100 ? x.toFixed(0) : Math.abs(x) >= 1 ? x.toFixed(2) : x.toPrecision(2));
 const pct = (x: number) => `${Math.round(x * 100)}%`;
 
-type Earning = { units: number; tag: string; costDay: number; fixedCost: number; perDayUnits: number };
+type Earning = { units: number; tag: string; costDay: number; fixedCost: number; perDayUnits: number;
+  spot?: number; vol?: { sigma: number; kind: "implied" | "realised" | "assumed" } }; // spot/vol: for tokens not in latest.usd
 
 /** Turn units earned (coins, BTC or TAO) into net $ quantiles over the horizon. */
 function settle(inp: Inputs, latest: Latest, tables: Tables, e: Earning) {
-  const S = latest.usd[e.tag];
-  const vol = latest.vol[e.tag] ?? { sigma: tables.defaults.vol_fallback, kind: "assumed" as const };
+  const S = e.spot ?? latest.usd[e.tag];
+  const vol = e.vol ?? latest.vol[e.tag] ?? { sigma: tables.defaults.vol_fallback, kind: "assumed" as const };
   const cost = e.costDay * inp.horizon + e.fixedCost;
   const q = (z: number) => e.units * avgPriceQuantile(S, vol.sigma, inp.horizon, z) - cost;
   const be = e.units > 0 ? cost / e.units : Infinity;
@@ -126,7 +128,9 @@ function settle(inp: Inputs, latest: Latest, tables: Tables, e: Earning) {
   };
 }
 
-export function gpuRows(inp: Inputs, latest: Latest, bench: Bench, tables: Tables, now: Date): Row[] {
+export type Alpha = { ts: string; subnets: Record<string, { vol: number; change30: number }> };
+
+export function gpuRows(inp: Inputs, latest: Latest, bench: Bench, tables: Tables, now: Date, alpha?: Alpha): Row[] {
   const gpu = tables.gpus[inp.gpu];
   if (!gpu) return [];
   const d = tables.defaults, H = inp.horizon, rows: Row[] = [];
@@ -151,7 +155,7 @@ export function gpuRows(inp: Inputs, latest: Latest, bench: Bench, tables: Table
       rows.push({
         kind: "pow", label: c.name, where: where(`mine ${algo} in a pool`), netDay: s.netDay, p10: s.p10, p50: s.p50, p90: s.p90, chance: 1, usesGpu: true, price: s.price,
         breakEvenPrice: s.breakEvenPrice, breakEvenKwh: kwhBreakEven(units * S, 0, watts),
-        flags: [...volFlag(s.vol), ...rentFlags()],
+        flags: [...volFlag(s.vol), ...coinFlags(c, latest, tables), ...rentFlags()],
         detail: {
           hashrate: `${(hs / 1e6).toPrecision(4)} MH/s at ${watts} W`, "coins/day": perDay.toPrecision(4), price: `$${S.toPrecision(4)}`,
           volatility: `${pct(s.vol.sigma)}/yr (${s.vol.kind})`, "network growth": `${(c.growth_day * 100).toFixed(2)}%/day (24 h trend)`,
@@ -194,7 +198,14 @@ export function gpuRows(inp: Inputs, latest: Latest, bench: Bench, tables: Table
     const chance = newcomers ? (sn.new_earners as number) / (sn.new_n as number) : 1 - sn.zero_share;
     const taoDay = atRank * chance;
     const burnUsd = sn.burn_tao * TAO, watts = gpu.tdp;
-    const s = settle(inp, latest, tables, { units: taoDay * H, tag: "TAO", costDay: powerCost(watts), fixedCost: burnUsd, perDayUnits: taoDay });
+    // Miners are paid in the subnet's alpha: value it at alpha × TAO, with both prices' volatility (archive-node history).
+    const a = alpha?.subnets[String(sn.netuid)];
+    const taoVol = latest.vol.TAO ?? { sigma: d.vol_fallback, kind: "assumed" as const };
+    const paid = a && sn.price_tao > 0
+      ? { units: (taoDay / sn.price_tao) * H, perDayUnits: taoDay / sn.price_tao, tag: `SN${sn.netuid} alpha`, spot: sn.price_tao * TAO,
+          vol: { sigma: Math.hypot(taoVol.sigma, a.vol), kind: "realised" as const } }
+      : { units: taoDay * H, perDayUnits: taoDay, tag: "TAO" };
+    const s = settle(inp, latest, tables, { ...paid, costDay: powerCost(watts), fixedCost: burnUsd });
     const flags = [`${pct(sn.zero_share)} of slots earn 0`];
     // ponytail: fixed thresholds (3 wallets >75% of rewards on a subnet with 10+ earners; payout >1% of the pool's TAO a day);
     // tune with archive history. Below 10 earners the winner-take-all flag already says it.
@@ -204,6 +215,8 @@ export function gpuRows(inp: Inputs, latest: Latest, bench: Bench, tables: Table
     if (winnerTakeAll) flags.unshift(`winner-take-all: ${sn.earners} of ${sn.n} slots earn`);
     if (!known) flags.push("hardware needs unknown");
     else if (!known.gpu) flags.push("doesn't use a GPU (CPU or paid AI API)");
+    if (a && a.change30 <= -0.3) flags.push(`alpha price fell ${pct(-a.change30)} in 30 days`);
+    if (a && a.change30 >= 1) flags.push(`alpha price up ${pct(a.change30)} in 30 days: pumps often reverse`);
     flags.push(`registration (${sn.burn_tao.toPrecision(3)} TAO) lost if pruned after immunity`);
     rows.push({
       kind: "tao", label: `SN${sn.netuid} ${sn.name}`.trim(), chance, usesGpu: known ? known.gpu : null, price: s.price,
@@ -220,7 +233,8 @@ export function gpuRows(inp: Inputs, latest: Latest, bench: Bench, tables: Table
         "rank spread": `ranked 10th–90th percentile among earners: $${money(sn.p.p10 * TAO)}–$${money(sn.p.p90 * TAO)}/day (top $${money(sn.p.top * TAO)})`,
         earners: `${sn.earners} of ${sn.n} slots`, registration: `${sn.burn_tao.toPrecision(3)} TAO ($${money(burnUsd)})`,
         immunity: `${sn.immunity_blocks} blocks (~${(sn.immunity_blocks / 7200).toFixed(1)} days)`,
-        "TAO volatility": `${pct(s.vol.sigma)}/yr (${s.vol.kind}); alpha price risk not modelled`,
+        ...(a ? { "price risk": `TAO ${pct(taoVol.sigma)}/yr and alpha ${pct(a.vol)}/yr give ${pct(s.vol.sigma)}/yr; alpha ${a.change30 >= 0 ? "+" : "−"}${pct(Math.abs(a.change30))} over 30 days (archive node)` }
+          : { "TAO volatility": `${pct(s.vol.sigma)}/yr (${s.vol.kind}); alpha price risk not modelled` }),
         ...(sn.sell_pressure != null ? { "pool": `${money(sn.tao_in ?? 0)} TAO reserve; miners are paid ${((sn.sell_pressure) * 100).toFixed(1)}% of it a day` } : {}),
         ...(sn.top3_share != null ? { wallets: `top 3 wallets take ${pct(sn.top3_share)} of rewards` } : {}),
         ...(known?.note ? { hardware: known.note } : {}),
@@ -274,6 +288,24 @@ export function sortRows(rows: Row[], key: SortKey, desc = true): Row[] {
   return [...rows].sort((a, b) => (desc ? v(b) - v(a) : v(a) - v(b)) || b.p50 - a.p50);
 }
 
+/** Flags about how tradeable a coin is: a tiny daily volume, or data WhatToMine itself marks as lagging. */
+function coinFlags(c: Coin, latest: Latest, tables: Tables): string[] {
+  const flags = [];
+  const volUsd = (c.vol_btc ?? Infinity) * latest.usd.BTC;
+  if (volUsd < tables.defaults.thin_market_usd) flags.push(`thin market: $${money(volUsd)}/day traded`);
+  if (c.lagging) flags.push("WhatToMine marks this coin's data as lagging");
+  return flags;
+}
+
+/** Revenue you could actually sell: at most max_volume_share of the coin's daily volume without moving its price. */
+function sellable(c: Coin, revenueUsd: number, latest: Latest, tables: Tables) {
+  const flags = c.lagging ? ["WhatToMine marks this coin's data as lagging"] : [];
+  if (c.vol_btc == null) return { revenue: revenueUsd, flags };
+  const volUsd = c.vol_btc * latest.usd.BTC, cap = tables.defaults.max_volume_share * volUsd;
+  if (revenueUsd <= cap) return { revenue: revenueUsd, flags };
+  return { revenue: cap, flags: [`only $${money(volUsd)}/day of ${c.name} trades: you could sell about $${money(cap)} of it`, ...flags] };
+}
+
 export function buyRows(inp: Inputs, latest: Latest, tables: Tables): BuyRow[] {
   const BTC = latest.usd.BTC, out: BuyRow[] = [];
   if (!(BTC > 0) || !(inp.budget > 0)) return out;
@@ -293,21 +325,23 @@ export function buyRows(inp: Inputs, latest: Latest, tables: Tables): BuyRow[] {
       // Nobody buys below what NiceHash pays sellers: stray cheap orders in the book aren't really for sale.
       const book = nh.book.map(([p, c]) => [Math.max(p, nh.pay), c] as [number, number]);
       const fill = fillBook(book, inp.budget / BTC, fee);
-      const spend = fill.hs * fill.priceBtc * (1 + fee) * BTC, revenue = fill.hs * best.usdPerHs;
+      const sold = sellable(best.coin, fill.hs * best.usdPerHs, latest, tables);
+      const spend = fill.hs * fill.priceBtc * (1 + fee) * BTC, revenue = sold.revenue;
       const u = si(fill.hs);
       if (spend > 0) out.push({
         algo, venue: "nicehash", coin: best.coin.name, marginPct: (revenue - spend) / spend, spend, revenue,
-        flags: fill.exhausted ? [`book exhausted: only $${money(spend)} of $${inp.budget.toLocaleString("en-US")}/day fillable`] : [],
+        flags: [...(fill.exhausted ? [`book exhausted: only $${money(spend)} of $${inp.budget.toLocaleString("en-US")}/day fillable`] : []), ...sold.flags],
         detail: { bought: `${u.text} at ${(fill.priceBtc * u.factor).toPrecision(3)} BTC per ${u.prefix}H/s per day`, fee: pct(fee) },
       });
     }
     const mrr = latest.mrr[algo];
     if (mrr?.price > 0) {
-      const fee = tables.fees.mrr.fee, hs = inp.budget / (mrr.price * (1 + fee) * BTC), revenue = hs * best.usdPerHs;
+      const fee = tables.fees.mrr.fee, hs = inp.budget / (mrr.price * (1 + fee) * BTC);
+      const sold = sellable(best.coin, hs * best.usdPerHs, latest, tables), revenue = sold.revenue;
       out.push({
         algo, venue: "mrr", coin: best.coin.name, marginPct: (revenue - inp.budget) / inp.budget, spend: inp.budget, revenue,
         // ponytail: MRR priced at its suggested price, not walked through live rig listings.
-        flags: ["priced at MRR's suggested price"],
+        flags: ["priced at MRR's suggested price", ...sold.flags],
         detail: { bought: si(hs).text, fee: pct(fee) },
       });
     }

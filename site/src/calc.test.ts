@@ -26,9 +26,9 @@ const latest = (): Latest => ({
     h100sxm: { ionet: { min: 1.19, med: 1.19, n: 898, util: 1 } },
   },
   subnets: [
-    { netuid: 9, name: "Big", price_tao: 0.02, pool_tao_day: 900, burn_tao: 0.5, immunity_blocks: 5000, n: 200, earners: 100,
+    { netuid: 199, name: "Big", price_tao: 0.02, pool_tao_day: 900, burn_tao: 0.5, immunity_blocks: 5000, n: 200, earners: 100,
       zero_share: 0.5, p: { p10: 1, p25: 2, p50: 4, p75: 8, p90: 16, top: 50 }, top3_share: 0.95, sell_pressure: 0.047, tao_in: 2455 },
-    { netuid: 11, name: "Healthy", price_tao: 0.02, pool_tao_day: 9, burn_tao: 0.5, immunity_blocks: 5000, n: 200, earners: 150,
+    { netuid: 198, name: "Healthy", price_tao: 0.02, pool_tao_day: 9, burn_tao: 0.5, immunity_blocks: 5000, n: 200, earners: 150,
       zero_share: 0.25, p: { p10: 1, p25: 2, p50: 4, p75: 8, p90: 16, top: 50 }, top3_share: 0.6, sell_pressure: 0.002, tao_in: 4500,
       slots: 201, max_slots: 256, new_n: 20, new_earners: 2, new_median: 1.5 },
     { netuid: 50, name: "CpuOnly", price_tao: 0.02, pool_tao_day: 9, burn_tao: 0.5, immunity_blocks: 5000, n: 100, earners: 50,
@@ -228,4 +228,30 @@ test("buy rows that can't fill half the budget sort below ones that can", () => 
   const rows = buyRows({ ...own, mode: "rent", budget: 10 }, L, tables);
   const thin = rows.findIndex((r) => r.algo === "nexapow"), full = rows.findIndex((r) => r.algo === "kawpow" && r.venue === "nicehash");
   assert.ok(rows[thin].marginPct > rows[full].marginPct && thin > full);
+});
+
+test("buy revenue is capped at what the coin's market can absorb, and thin or lagging coins are flagged", () => {
+  const L = latest();
+  L.coins[0] = { ...L.coins[0], vol_btc: 0.0016, lagging: true }; // Ravencoin trading only ~$125 a day
+  const nh = buyRows({ ...own, mode: "rent", budget: 10 }, L, tables).find((r) => r.venue === "nicehash" && r.algo === "kawpow") as ReturnType<typeof buyRows>[number];
+  const cap = tables.defaults.max_volume_share * 0.0016 * 78000;
+  assert.ok(Math.abs(nh.revenue - cap) < 1e-9);
+  assert.ok(nh.flags.some((f) => f.startsWith("only $125/day of Ravencoin trades")));
+  assert.ok(nh.flags.includes("WhatToMine marks this coin's data as lagging"));
+  const pow = gpuRows(own, L, bench, tables, NOW).find((r) => r.kind === "pow") as Row;
+  assert.ok(pow.flags.includes("thin market: $125/day traded") && pow.flags.includes("WhatToMine marks this coin's data as lagging"));
+});
+
+test("Bittensor rows are valued in the subnet's alpha, with alpha's own volatility and 30-day move", () => {
+  const alpha = { ts: "", subnets: { "199": { vol: 1.0, change30: -0.5 }, "198": { vol: 0.5, change30: 2 } } };
+  const plain = gpuRows(own, latest(), bench, tables, NOW).find((r) => r.label.includes("Big")) as Row;
+  const rows = gpuRows(own, latest(), bench, tables, NOW, alpha);
+  const big = rows.find((r) => r.label.includes("Big")) as Row;
+  assert.equal(big.price?.tag, "SN199 alpha");
+  assert.ok(Math.abs((big.price?.spot ?? 0) - 0.02 * 230) < 1e-12);
+  assert.ok(Math.abs((big.price?.sigma ?? 0) - Math.hypot(0.65, 1.0)) < 1e-12);
+  assert.ok(Math.abs(big.netDay - plain.netDay) < 1e-9 && big.p10 < plain.p10); // same expectation, wider range
+  assert.ok(big.flags.includes("alpha price fell 50% in 30 days"));
+  const healthy = rows.find((r) => r.label.includes("Healthy")) as Row;
+  assert.ok(healthy.flags.includes("alpha price up 200% in 30 days: pumps often reverse"));
 });

@@ -183,3 +183,24 @@ def test_subnet_stats_newcomers_and_seats():
     assert (s["new_n"], s["new_earners"]) == (4, 2)
     pool = s["pool_tao_day"]
     assert math.isclose(s["new_median"], (1 / 5 * pool + 2 / 5 * pool) / 2)
+
+
+def test_reduce_keeps_market_depth_and_lagging():
+    raw = raw_min()
+    raw["wtm_gpu"]["coins"]["Ravencoin"].update(exchange_rate_vol=3.2, lagging=True)
+    c = reduce(raw, TABLES, NOW)["coins"][0]
+    assert c["vol_btc"] == 3.2 and c["lagging"] is True
+
+
+def test_alpha_stats_from_daily_pool_history():
+    from reduce import alpha_stats
+
+    hist = {"blocks": [1, 2, 3, 4, 5], "tao_in": {"5": [100, 110, 100, 110, 110], "9": [0, 0, 0, 1, 1]},
+            "alpha_in": {"5": [1000, 1000, 1000, 1000, 1000], "9": [10, 10, 10, 10, 10]}}
+    out = alpha_stats(hist, NOW)
+    s5 = out["subnets"]["5"]
+    rets = [math.log(1.1), -math.log(1.1), math.log(1.1), 0.0]
+    mean = sum(rets) / 4
+    assert math.isclose(s5["vol"], math.sqrt(sum((r - mean) ** 2 for r in rets) / 4 * 365), rel_tol=1e-3)  # 3 digits
+    assert math.isclose(s5["change30"], 0.1)
+    assert "9" not in out["subnets"]  # too few non-zero days to say anything

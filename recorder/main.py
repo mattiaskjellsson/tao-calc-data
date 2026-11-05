@@ -10,7 +10,7 @@ import urllib.request
 from datetime import datetime, timezone
 
 from fetch import fetch_all
-from reduce import benchmarks, reduce
+from reduce import alpha_stats, benchmarks, reduce
 
 API = "https://api.github.com"
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -120,11 +120,9 @@ def main() -> int:
             failures.append(label)
             print(f"{label}: FAILED {e!r}"[:500], file=sys.stderr, flush=True)
 
-    if DRY_RUN:
-        have_bench = os.path.exists(os.path.join(OUT, "site-data", "benchmarks.json"))
-    else:
-        have_bench = exists(PUBLIC_REPO, "site-data/benchmarks.json", token)
-    public, private = fetch_all(tables, now, daily=now.hour == 0 or not have_bench)
+    have = lambda path: os.path.exists(os.path.join(OUT, path)) if DRY_RUN else exists(PUBLIC_REPO, path, token)
+    daily = now.hour == 0 or not have("site-data/benchmarks.json") or not have("site-data/alpha.json")
+    public, private = fetch_all(tables, now, daily=daily)
     errors = [k for k, v in public.items() if isinstance(v, dict) and "error" in v]
     print(f"fetched: {len(public)} public sources, errors: {errors or 'none'}", flush=True)
 
@@ -133,6 +131,9 @@ def main() -> int:
     latest = json.dumps(reduce(public, tables, now), separators=(",", ":"), allow_nan=False).encode()
     bench = benchmarks(public["nicehash_devices"]["devices"], tables, now) \
         if isinstance(public.get("nicehash_devices"), dict) and "devices" in public["nicehash_devices"] else None
+    hist = public.get("alpha_history")
+    alpha = json.dumps(alpha_stats(hist, now), separators=(",", ":"), allow_nan=False).encode() \
+        if isinstance(hist, dict) and "tao_in" in hist else None
 
     if DRY_RUN:
         write(f"public/{tag}/{name}", pub_gz)
@@ -141,6 +142,8 @@ def main() -> int:
         write(f"site-data/daily/{now:%Y-%m-%d}.json", latest)
         if bench:
             write("site-data/benchmarks.json", json.dumps(bench, separators=(",", ":")).encode())
+        if alpha:
+            write("site-data/alpha.json", alpha)
         print(f"dry run: public {len(pub_gz)} B, private {len(priv_gz)} B, latest {len(latest)} B")
         return 0
 
@@ -158,6 +161,8 @@ def main() -> int:
             put_file(PUBLIC_REPO, "site-data/benchmarks.json", json.dumps(bench, separators=(",", ":")).encode(),
                      "data: benchmarks", token)
         step("benchmarks", bench_step)
+    if alpha:
+        step("alpha", lambda: put_file(PUBLIC_REPO, "site-data/alpha.json", alpha, f"data: alpha {now:%Y-%m-%d}", token))
     print(f"done, failures: {failures or 'none'}")
     return 1 if failures else 0
 

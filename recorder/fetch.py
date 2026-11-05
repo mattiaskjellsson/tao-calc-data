@@ -69,6 +69,22 @@ def bittensor_metagraphs() -> list:
     return out
 
 
+def alpha_history(days: int = 30) -> dict:
+    """Every subnet's pool reserves at one block a day for the last `days` days, read from the archive node."""
+    import bittensor as bt
+
+    sub = bt.Subtensor("archive")
+    now = sub.block if isinstance(sub.block, int) else sub.block()
+    blocks = [now - d * 7200 for d in range(days, -1, -1)]  # oldest first
+    tao_in: dict[str, list] = {}
+    alpha_in: dict[str, list] = {}
+    for i, blk in enumerate(blocks):
+        for name, store in (("SubnetTAO", tao_in), ("SubnetAlphaIn", alpha_in)):
+            for k, v in sub.query_map(("SubtensorModule", name), block=blk):
+                store.setdefault(str(int(k)), [0] * len(blocks))[i] = int(v)
+    return {"blocks": blocks, "tao_in": tao_in, "alpha_in": alpha_in}
+
+
 def vast(name: str):
     q = {"gpu_name": {"eq": name}, "num_gpus": {"eq": 1}, "rentable": {"eq": True}, "order": [["dph_total", "asc"]],
          "type": "on-demand"}
@@ -119,6 +135,7 @@ def fetch_all(tables: dict, now: datetime, daily: bool) -> tuple[dict, dict]:
 
     with ThreadPoolExecutor(max_workers=16) as pool:
         chain = pool.submit(safe, bittensor_metagraphs)
+        alpha = pool.submit(safe, alpha_history) if daily else None  # ~2 min on the archive node, so once a day
         jobs = {k: pool.submit(safe, get, u) for k, u in {**simple, **private_urls}.items()}
         if "runpod" not in skip:
             jobs["runpod"] = pool.submit(safe, get, "https://api.runpod.io/graphql", runpod_q)
@@ -143,6 +160,8 @@ def fetch_all(tables: dict, now: datetime, daily: bool) -> tuple[dict, dict]:
         public["hyperliquid"] = {c: f.result() for c, f in hl_jobs.items()}
         public["binance_klines"] = {t: f.result() for t, f in kl_jobs.items()}
         public["bittensor"] = chain.result()
+        if alpha:
+            public["alpha_history"] = alpha.result()
         private = {k: res[k] for k in private_urls} | {"deribit_dvol": {c: f.result() for c, f in dvol_jobs.items()}}
     return public, private
 
