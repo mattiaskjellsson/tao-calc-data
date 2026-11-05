@@ -153,7 +153,8 @@
     "50": {"gpu": false, "note": "Synth: price forecasts, CPU"},
     "51": {"gpu": true,  "note": "Lium: you rent the GPU out; see the Lium rent-out row"},
     "56": {"gpu": true,  "vram": 80, "note": "Gradients: training, H100 class"},
-    "64": {"gpu": true,  "vram": 80, "note": "Chutes: inference, H100/H200 class"}
+    "64": {"gpu": true,  "vram": 80, "note": "Chutes: inference, H100/H200 class"},
+    "82": {"gpu": false, "skip": true, "note": "Noah: no miner to run; rewards follow capital contributed to its 'Ark' (staking-like, out of scope). github.com/Vora-Inc/NOAH, checked 2026-11-05"}
   },
   "defaults": {
     "pool_fee": 0.01, "util": 0.5, "util_band": 0.2, "rank_pct": 25, "buy_fee_nicehash": 0.03,

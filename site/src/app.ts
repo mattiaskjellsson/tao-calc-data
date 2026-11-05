@@ -1,4 +1,4 @@
-import { buyRows, gpuRows, rentCost, MARKET_NAMES, type Bench, type BuyRow, type Inputs, type Latest, type Row, type Tables } from "./calc.js";
+import { buyRows, gpuRows, rentCost, sortRows, MARKET_NAMES, type Bench, type BuyRow, type Inputs, type Latest, type Row, type SortKey, type Tables } from "./calc.js";
 
 const DATA = new URLSearchParams(location.search).get("data") ?? "https://raw.githubusercontent.com/mattiaskjellsson/tao-calc-data/main/site-data/";
 const STALE_HOURS = 3;
@@ -16,6 +16,7 @@ const pct = (x: number) => `${x >= 0 ? "+" : "−"}${Math.abs(Math.round(x * 100
 
 let tables: Tables, latest: Latest, bench: Bench;
 let showAll = false;
+let desc = true; // clicking the active column header again flips this
 const open = new Set<string>();
 
 async function getJson<T>(url: string): Promise<T> {
@@ -55,7 +56,12 @@ function breakEven(r: Row, mode: string) {
 }
 
 function renderRows(inp: Inputs) {
-  const rows = gpuRows(inp, latest, bench, tables, new Date());
+  const f = new FormData(form), key = String(f.get("sort") ?? "p50") as SortKey, minChance = Number(f.get("minChance") ?? 0);
+  const rows = sortRows(gpuRows(inp, latest, bench, tables, new Date()).filter((r) => r.chance >= minChance), key, desc);
+  document.querySelectorAll<HTMLButtonElement>("button.sort").forEach((b) => {
+    b.classList.toggle("active", b.dataset.sort === key);
+    b.classList.toggle("asc", b.dataset.sort === key && !desc);
+  });
   const shown = showAll ? rows : rows.slice(0, SHOW);
   const body = shown.map((r) => {
     const key = `${r.kind}:${r.label}:${r.where}`;
@@ -63,10 +69,11 @@ function renderRows(inp: Inputs) {
       <td data-label=""><div class="label">${esc(r.label)}</div><div class="where">${esc(r.where)}</div></td>
       <td class="num" data-label="Net $/day">${signed(r.netDay)}</td>
       <td class="num range" data-label="Over ${inp.horizon} d">${signed(r.p10)} · <b>${signed(r.p50)}</b> · ${signed(r.p90)}</td>
+      <td class="num" data-label="Chance of earning"><span class="${r.chance < 0.5 ? "neg" : ""}">${Math.round(r.chance * 100)}%</span></td>
       <td data-label="Break-even">${breakEven(r, inp.mode)}</td>
       <td data-label="">${flagsHtml(r.flags)}</td></tr>`;
     const detail = open.has(key)
-      ? `<tr class="detail"><td colspan="5"><dl>${Object.entries(r.detail).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")}</dl></td></tr>`
+      ? `<tr class="detail"><td colspan="6"><dl>${Object.entries(r.detail).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")}</dl></td></tr>`
       : "";
     return main + detail;
   }).join("");
@@ -129,9 +136,22 @@ async function main() {
   select.innerHTML = usable.map(([id, g]) => `<option value="${esc(id)}">${esc(g.name)} · ${g.vram} GB</option>`).join("");
   select.value = usable.some(([id]) => id === "rtx4090") ? "rtx4090" : usable[0]?.[0] ?? "";
 
-  form.addEventListener("input", () => { showAll = false; render(); });
+  form.addEventListener("input", (e) => {
+    if ((e.target as HTMLElement).getAttribute("name") === "sort") desc = true;
+    showAll = false;
+    render();
+  });
+  $<HTMLElement>("#rows thead").addEventListener("click", (e) => {
+    const b = (e.target as Element).closest("button.sort") as HTMLButtonElement | null;
+    if (!b) return;
+    const select = form.elements.namedItem("sort") as HTMLSelectElement;
+    desc = select.value === b.dataset.sort ? !desc : true;
+    select.value = b.dataset.sort as string;
+    render();
+  });
   $<HTMLButtonElement>("#show-all").addEventListener("click", () => { showAll = !showAll; render(); });
   const toggle = (e: Event) => {
+    if ((e.target as Element).closest("thead")) return;
     const tr = (e.target as Element).closest("tr.row") as HTMLElement | null;
     if (!tr) return;
     const key = tr.dataset.key as string;

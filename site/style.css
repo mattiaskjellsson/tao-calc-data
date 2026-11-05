@@ -37,6 +37,11 @@ body.mode-rent .own-only, body.mode-own .rent-only { display: none; }
 #banner > div { background: var(--warn-bg); color: var(--warn-ink); padding: 10px 14px; border-radius: 10px; }
 
 table.results { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+button.sort { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; text-align: inherit; }
+button.sort:hover { color: var(--ink); }
+button.sort.active { color: var(--ink); }
+button.sort.active::after { content: " ↓"; }
+button.sort.active.asc::after { content: " ↑"; }
 .results th { text-align: left; font-size: 0.8rem; color: var(--muted); font-weight: 600; padding: 10px 12px; border-bottom: 1px solid var(--line); }
 .results td { padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
 .results tr.row { cursor: pointer; }

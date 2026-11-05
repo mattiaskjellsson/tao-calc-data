@@ -8,7 +8,7 @@ export type Tables = {
   terms: Record<string, "allowed" | "restricted" | "banned" | "unknown">;
   terms_note: Record<string, string>;
   halvings: Record<string, [string, number][] | { decay_per_year: number } | boolean>;
-  subnet_hw: Record<string, { gpu: boolean; vram?: number; note?: string } | boolean>;
+  subnet_hw: Record<string, { gpu: boolean; vram?: number; note?: string; skip?: boolean } | boolean>;
   defaults: { pool_fee: number; util: number; util_band: number; rank_pct: number; buy_fee_nicehash: number; budget: number;
     vol_fallback: number; growth_cap_day: number; idle_frac: number; kwh: number };
 };
@@ -33,6 +33,7 @@ export type Inputs = { mode: "own" | "rent"; gpu: string; kwh: number; horizon: 
 export type Row = {
   kind: "pow" | "nicehash" | "mrr" | "tao" | "rent"; label: string; where: string;
   netDay: number; p10: number; p50: number; p90: number;
+  chance: number; // how likely the option earns anything: pool mining 1, Bittensor share of slots earning, rent-out utilisation
   breakEvenPrice?: { value: number; pctFromNow: number; unit: string }; breakEvenKwh?: number;
   flags: string[]; detail: Record<string, string | number>;
 };
@@ -135,7 +136,7 @@ export function gpuRows(inp: Inputs, latest: Latest, bench: Bench, tables: Table
       const units = unitsOverHorizon(perDay, c.growth_day, H, emissionFor(c.tag, tables, now));
       const s = settle(inp, latest, tables, { units, tag: c.tag, costDay: powerCost(watts), fixedCost: 0, perDayUnits: perDay });
       rows.push({
-        kind: "pow", label: c.name, where: where(`mine ${algo} in a pool`), netDay: s.netDay, p10: s.p10, p50: s.p50, p90: s.p90,
+        kind: "pow", label: c.name, where: where(`mine ${algo} in a pool`), netDay: s.netDay, p10: s.p10, p50: s.p50, p90: s.p90, chance: 1,
         breakEvenPrice: s.breakEvenPrice, breakEvenKwh: kwhBreakEven(units * S, 0, watts),
         flags: [...volFlag(s.vol), ...rentFlags()],
         detail: {
@@ -148,17 +149,17 @@ export function gpuRows(inp: Inputs, latest: Latest, bench: Bench, tables: Table
     }
     if (inp.mode !== "own") continue;
     // Selling the hashrate instead: NiceHash pays per H/s, MiningRigRentals rents whole rigs.
-    const sell: [Row["kind"], string, number, string][] = [];
+    const sell: [Row["kind"], string, number, string, number][] = [];
     const nh = latest.nicehash[algo];
-    if (nh?.pay > 0) sell.push(["nicehash", "Sell on NiceHash", hs * nh.pay * (1 - tables.fees.nicehash.fee), "fee " + pct(tables.fees.nicehash.fee)]);
+    if (nh?.pay > 0) sell.push(["nicehash", "Sell on NiceHash", hs * nh.pay * (1 - tables.fees.nicehash.fee), "fee " + pct(tables.fees.nicehash.fee), 1]);
     const mrr = latest.mrr[algo];
     if (mrr?.price > 0 && mrr.rented > 0)
-      sell.push(["mrr", "Rent out on MiningRigRentals", hs * mrr.price * mrr.rented * (1 - tables.fees.mrr.fee), `${pct(mrr.rented)} of rigs rented`]);
-    for (const [kind, label, btcDay, note] of sell) {
+      sell.push(["mrr", "Rent out on MiningRigRentals", hs * mrr.price * mrr.rented * (1 - tables.fees.mrr.fee), `${pct(mrr.rented)} of rigs rented`, mrr.rented]);
+    for (const [kind, label, btcDay, note, chance] of sell) {
       const s = settle(inp, latest, tables, { units: btcDay * H, tag: "BTC", costDay: powerCost(watts), fixedCost: 0, perDayUnits: btcDay });
       if (!(latest.usd.BTC > 0)) continue;
       rows.push({
-        kind, label: `${label} (${algo})`, where: "paid in BTC", netDay: s.netDay, p10: s.p10, p50: s.p50, p90: s.p90,
+        kind, label: `${label} (${algo})`, where: "paid in BTC", netDay: s.netDay, p10: s.p10, p50: s.p50, p90: s.p90, chance,
         breakEvenPrice: s.breakEvenPrice, breakEvenKwh: kwhBreakEven(btcDay * H * latest.usd.BTC, 0, watts), flags: [],
         detail: { hashrate: `${(hs / 1e6).toPrecision(4)} MH/s at ${watts} W`, "BTC/day": btcDay.toPrecision(4), note },
       });
@@ -169,7 +170,7 @@ export function gpuRows(inp: Inputs, latest: Latest, bench: Bench, tables: Table
   const TAO = latest.usd.TAO;
   for (const sn of TAO > 0 ? latest.subnets : []) {
     const hw = tables.subnet_hw[String(sn.netuid)];
-    if (hw && typeof hw !== "boolean" && hw.gpu && hw.vram && gpu.vram < hw.vram) continue;
+    if (hw && typeof hw !== "boolean" && (hw.skip || (hw.gpu && hw.vram && gpu.vram < hw.vram))) continue;
     // Like tao's scan (its "tenth" earner): with fewer than 10 earners a new slot is assumed to earn nothing.
     const winnerTakeAll = sn.earners < 10;
     const atRank = winnerTakeAll ? 0 : interpRank(sn.p, inp.rankPct);
@@ -183,7 +184,7 @@ export function gpuRows(inp: Inputs, latest: Latest, bench: Bench, tables: Table
     else if (!hw.gpu) flags.push("CPU-only: your GPU isn't used");
     flags.push(`registration (${sn.burn_tao.toPrecision(3)} TAO) lost if pruned after immunity`);
     rows.push({
-      kind: "tao", label: `SN${sn.netuid} ${sn.name}`.trim(), where: where("run a miner on this card"),
+      kind: "tao", label: `SN${sn.netuid} ${sn.name}`.trim(), where: where("run a miner on this card"), chance: 1 - sn.zero_share,
       netDay: s.netDay - burnUsd / H, p10: s.p10, p50: s.p50, p90: s.p90,
       breakEvenPrice: s.breakEvenPrice, breakEvenKwh: kwhBreakEven(taoDay * H * TAO, burnUsd, watts), flags,
       detail: {
@@ -215,7 +216,7 @@ export function gpuRows(inp: Inputs, latest: Latest, bench: Bench, tables: Table
       if (!tables.fees[m]?.confirmed) flags.push(`fee ${pct(fee)} unconfirmed`);
       if (inp.util == null && q.util == null) flags.push(`utilisation assumed ${pct(u0)}`);
       rows.push({
-        kind: "rent", label: `Rent out on ${MARKET_NAMES[m] ?? m}`, where: MARKET_NAMES[m] ?? m,
+        kind: "rent", label: `Rent out on ${MARKET_NAMES[m] ?? m}`, where: MARKET_NAMES[m] ?? m, chance: u0,
         // When power costs more than renting earns, more utilisation is worse, so order the band's ends.
         netDay: net(u0), p10: Math.min(net(lo), net(hi)) * H, p50: net(u0) * H, p90: Math.max(net(lo), net(hi)) * H,
         breakEvenPrice: Number.isFinite(be) ? { value: be, pctFromNow: be / q.med - 1, unit: "$/h" } : undefined,
@@ -230,6 +231,18 @@ export function gpuRows(inp: Inputs, latest: Latest, bench: Bench, tables: Table
     }
   }
   return rows.filter((r) => [r.netDay, r.p10, r.p50, r.p90].every(Number.isFinite)).sort((a, b) => b.p50 - a.p50);
+}
+
+export type SortKey = "p50" | "netDay" | "chance" | "breakEven";
+const sortValue: Record<SortKey, (r: Row) => number> = {
+  p50: (r) => r.p50, netDay: (r) => r.netDay, chance: (r) => r.chance,
+  // the further the break-even price sits below today's, the safer: sort on its distance
+  breakEven: (r) => (r.breakEvenPrice ? -r.breakEvenPrice.pctFromNow : -Infinity),
+};
+
+export function sortRows(rows: Row[], key: SortKey, desc = true): Row[] {
+  const v = sortValue[key];
+  return [...rows].sort((a, b) => (desc ? v(b) - v(a) : v(a) - v(b)) || b.p50 - a.p50);
 }
 
 export function buyRows(inp: Inputs, latest: Latest, tables: Tables): BuyRow[] {

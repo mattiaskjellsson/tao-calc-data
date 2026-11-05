@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
-  avgPriceQuantile, buyRows, fillBook, gpuRows, soloChance, unitsOverHorizon,
+  avgPriceQuantile, buyRows, fillBook, gpuRows, soloChance, sortRows, unitsOverHorizon,
   type Bench, type Inputs, type Latest, type Row, type Tables,
 } from "./calc.js";
 
@@ -28,6 +28,8 @@ const latest = (): Latest => ({
   subnets: [
     { netuid: 9, name: "Big", price_tao: 0.02, pool_tao_day: 900, burn_tao: 0.5, immunity_blocks: 5000, n: 200, earners: 100,
       zero_share: 0.5, p: { p10: 1, p25: 2, p50: 4, p75: 8, p90: 16, top: 50 } },
+    { netuid: 82, name: "Staking", price_tao: 0.04, pool_tao_day: 114, burn_tao: 8, immunity_blocks: 65535, n: 66, earners: 64,
+      zero_share: 0.03, p: { p10: 1, p25: 1.9, p50: 1.9, p75: 1.9, p90: 2, top: 2 } },
     { netuid: 7, name: "Solo", price_tao: 0.01, pool_tao_day: 70, burn_tao: 0.1, immunity_blocks: 5000, n: 254, earners: 1,
       zero_share: 0.996, p: { p10: 70, p25: 70, p50: 70, p75: 70, p90: 70, top: 70 } },
   ],
@@ -125,4 +127,30 @@ test("rent-out range stays ordered when power costs more than renting earns", ()
   const rows = gpuRows({ ...own, kwh: 3 }, latest(), bench, tables, NOW).filter((r) => r.kind === "rent");
   assert.ok(rows.length > 0);
   for (const r of rows) assert.ok(r.p10 <= r.p50 && r.p50 <= r.p90, `${r.label}: ${r.p10} ${r.p50} ${r.p90}`);
+});
+
+test("each row says how likely it is to earn anything", () => {
+  const rows = gpuRows(own, latest(), bench, tables, NOW);
+  const by = (f: (r: Row) => boolean) => rows.find(f) as Row;
+  assert.equal(by((r) => r.kind === "pow").chance, 1);
+  assert.equal(by((r) => r.label.includes("Big")).chance, 0.5);
+  assert.ok(Math.abs(by((r) => r.label.includes("Solo")).chance - 0.004) < 1e-12);
+  assert.equal(by((r) => r.where === "io.net").chance, 0.9);
+  assert.equal(by((r) => r.kind === "mrr").chance, 0.05);
+});
+
+test("sortRows orders by the chosen column, ties broken by p50", () => {
+  const rows = gpuRows(own, latest(), bench, tables, NOW);
+  const byChance = sortRows(rows, "chance");
+  for (let i = 1; i < byChance.length; i++) {
+    const [a, b] = [byChance[i - 1], byChance[i]];
+    assert.ok(a.chance > b.chance || (a.chance === b.chance && a.p50 >= b.p50));
+  }
+  const asc = sortRows(rows, "netDay", false);
+  for (let i = 1; i < asc.length; i++) assert.ok(asc[i - 1].netDay <= asc[i].netDay);
+});
+
+test("subnets marked skip in the hardware table (not compute) are left out", () => {
+  const rows = gpuRows(own, latest(), bench, tables, NOW);
+  assert.ok(!rows.some((r) => r.label.startsWith("SN82 ")));
 });
