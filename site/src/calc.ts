@@ -8,14 +8,15 @@ export type Tables = {
   terms: Record<string, "allowed" | "restricted" | "banned" | "unknown">;
   terms_note: Record<string, string>;
   halvings: Record<string, [string, number][] | { decay_per_year: number } | boolean>;
-  subnet_hw: Record<string, { gpu: boolean; vram?: number; note?: string; skip?: boolean } | boolean>;
+  subnet_hw: Record<string, { gpu: boolean; vram?: number; gpus?: string[]; note?: string; skip?: boolean } | boolean>;
   defaults: { pool_fee: number; util: number; util_band: number; rank_pct: number; buy_fee_nicehash: number; budget: number;
     vol_fallback: number; growth_cap_day: number; idle_frac: number; kwh: number };
 };
 export type Coin = { name: string; tag: string; algo: string; block_time: number; block_reward: number; nethash: number; growth_day: number; list: string };
 export type Subnet = { netuid: number; name: string; price_tao: number; pool_tao_day: number; burn_tao: number; immunity_blocks: number;
   n: number; earners: number; zero_share: number; p: { p10: number; p25: number; p50: number; p75: number; p90: number; top: number };
-  top3_share?: number; sell_pressure?: number; tao_in?: number };
+  top3_share?: number; sell_pressure?: number; tao_in?: number;
+  slots?: number; max_slots?: number; new_n?: number; new_earners?: number; new_median?: number };
 export type Market = { min: number; med: number; n: number; util: number | null };
 export type Latest = {
   ts: string;
@@ -34,7 +35,9 @@ export type Inputs = { mode: "own" | "rent"; gpu: string; kwh: number; horizon: 
 export type Row = {
   kind: "pow" | "nicehash" | "mrr" | "tao" | "rent"; label: string; where: string;
   netDay: number; p10: number; p50: number; p90: number;
-  chance: number; // how likely the option earns anything: pool mining 1, Bittensor share of slots earning, rent-out utilisation
+  chance: number; // how likely the option earns anything: pool mining 1, Bittensor newcomers earning, rent-out utilisation
+  usesGpu: boolean | null; // null: a subnet whose hardware needs are unknown
+  price?: { tag: string; spot: number; sigma: number; kind: "implied" | "realised" | "assumed" }; // what the earnings are paid in
   breakEvenPrice?: { value: number; pctFromNow: number; unit: string }; breakEvenKwh?: number;
   flags: string[]; detail: Record<string, string | number>;
 };
@@ -53,6 +56,14 @@ export function unitsOverHorizon(perDay: number, growthDay: number, days: number
 }
 
 export const soloChance = (lambda: number) => 1 - Math.exp(-lambda);
+
+/** Where the price could be on each day of the horizon: lognormal, no drift, p10/p50/p90. */
+export function priceCone(S: number, sigmaYr: number, days: number) {
+  return Array.from({ length: days + 1 }, (_, day) => {
+    const w = Z90 * sigmaYr * Math.sqrt(day / 365);
+    return { day, p10: S * Math.exp(-w), p50: S, p90: S * Math.exp(w) };
+  });
+}
 
 /** Largest H/s a buyer gets for budgetBtcDay: to take hs you must outbid every order below cum_hs ≥ hs. */
 export function fillBook(book: [number, number][], budgetBtcDay: number, fee: number) {
@@ -111,6 +122,7 @@ function settle(inp: Inputs, latest: Latest, tables: Tables, e: Earning) {
     p10: q(-Z90), p50: q(0), p90: q(Z90),
     breakEvenPrice: Number.isFinite(be) ? { value: be, pctFromNow: be / S - 1, unit: `$/${e.tag}` } : undefined,
     vol,
+    price: { tag: e.tag, spot: S, sigma: vol.sigma, kind: vol.kind },
   };
 }
 
@@ -137,7 +149,7 @@ export function gpuRows(inp: Inputs, latest: Latest, bench: Bench, tables: Table
       const units = unitsOverHorizon(perDay, c.growth_day, H, emissionFor(c.tag, tables, now));
       const s = settle(inp, latest, tables, { units, tag: c.tag, costDay: powerCost(watts), fixedCost: 0, perDayUnits: perDay });
       rows.push({
-        kind: "pow", label: c.name, where: where(`mine ${algo} in a pool`), netDay: s.netDay, p10: s.p10, p50: s.p50, p90: s.p90, chance: 1,
+        kind: "pow", label: c.name, where: where(`mine ${algo} in a pool`), netDay: s.netDay, p10: s.p10, p50: s.p50, p90: s.p90, chance: 1, usesGpu: true, price: s.price,
         breakEvenPrice: s.breakEvenPrice, breakEvenKwh: kwhBreakEven(units * S, 0, watts),
         flags: [...volFlag(s.vol), ...rentFlags()],
         detail: {
@@ -160,7 +172,7 @@ export function gpuRows(inp: Inputs, latest: Latest, bench: Bench, tables: Table
       const s = settle(inp, latest, tables, { units: btcDay * H, tag: "BTC", costDay: powerCost(watts), fixedCost: 0, perDayUnits: btcDay });
       if (!(latest.usd.BTC > 0)) continue;
       rows.push({
-        kind, label: `${label} (${algo})`, where: "paid in BTC", netDay: s.netDay, p10: s.p10, p50: s.p50, p90: s.p90, chance,
+        kind, label: `${label} (${algo})`, where: "paid in BTC", netDay: s.netDay, p10: s.p10, p50: s.p50, p90: s.p90, chance, usesGpu: true, price: s.price,
         breakEvenPrice: s.breakEvenPrice, breakEvenKwh: kwhBreakEven(btcDay * H * latest.usd.BTC, 0, watts), flags: [],
         detail: { hashrate: `${(hs / 1e6).toPrecision(4)} MH/s at ${watts} W`, "BTC/day": btcDay.toPrecision(4), note },
       });
@@ -171,12 +183,16 @@ export function gpuRows(inp: Inputs, latest: Latest, bench: Bench, tables: Table
   const TAO = latest.usd.TAO;
   for (const sn of TAO > 0 ? latest.subnets : []) {
     const hw = tables.subnet_hw[String(sn.netuid)];
-    if (hw && typeof hw !== "boolean" && (hw.skip || (hw.gpu && hw.vram && gpu.vram < hw.vram))) continue;
+    const known = hw && typeof hw !== "boolean" ? hw : null;
+    if (known && (known.skip || (known.gpu && known.vram && gpu.vram < known.vram) || (known.gpus && !known.gpus.includes(inp.gpu)))) continue;
     // Like tao's scan (its "tenth" earner): with fewer than 10 earners a new slot is assumed to earn nothing.
     const winnerTakeAll = sn.earners < 10;
     const atRank = winnerTakeAll ? 0 : interpRank(sn.p, inp.rankPct);
-    // The rank is among earners; weighting by today's earning share keeps a 95%-zero subnet from looking safe.
-    const taoDay = atRank * (1 - sn.zero_share);
+    // Chance of earning: what newcomers (registered in the last 14 days) actually get, when there are enough of them;
+    // otherwise the share of all slots earning. Weighting the rank by it keeps a 95%-zero subnet from looking safe.
+    const newcomers = (sn.new_n ?? 0) >= 5;
+    const chance = newcomers ? (sn.new_earners as number) / (sn.new_n as number) : 1 - sn.zero_share;
+    const taoDay = atRank * chance;
     const burnUsd = sn.burn_tao * TAO, watts = gpu.tdp;
     const s = settle(inp, latest, tables, { units: taoDay * H, tag: "TAO", costDay: powerCost(watts), fixedCost: burnUsd, perDayUnits: taoDay });
     const flags = [`${pct(sn.zero_share)} of slots earn 0`];
@@ -186,23 +202,28 @@ export function gpuRows(inp: Inputs, latest: Latest, bench: Bench, tables: Table
     if ((sn.sell_pressure ?? 0) > 0.01)
       flags.push(`miners sell ${((sn.sell_pressure as number) * 100).toFixed(1)}% of the pool's TAO a day: alpha price likely to fall`);
     if (winnerTakeAll) flags.unshift(`winner-take-all: ${sn.earners} of ${sn.n} slots earn`);
-    if (!hw || typeof hw === "boolean") flags.push("hardware needs unknown");
-    else if (!hw.gpu) flags.push("CPU-only: your GPU isn't used");
+    if (!known) flags.push("hardware needs unknown");
+    else if (!known.gpu) flags.push("doesn't use a GPU (CPU or paid AI API)");
     flags.push(`registration (${sn.burn_tao.toPrecision(3)} TAO) lost if pruned after immunity`);
     rows.push({
-      kind: "tao", label: `SN${sn.netuid} ${sn.name}`.trim(), where: where("run a miner on this card"), chance: 1 - sn.zero_share,
+      kind: "tao", label: `SN${sn.netuid} ${sn.name}`.trim(), chance, usesGpu: known ? known.gpu : null, price: s.price,
+      where: [where("run a miner on this card"), `${sn.earners}/${sn.n} seats earn`,
+        ...(sn.max_slots && sn.slots != null ? [`${Math.max(0, sn.max_slots - sn.slots)} open`] : [])].join(" · "),
       netDay: s.netDay - burnUsd / H, p10: s.p10, p50: s.p50, p90: s.p90,
       breakEvenPrice: s.breakEvenPrice, breakEvenKwh: kwhBreakEven(taoDay * H * TAO, burnUsd, watts), flags,
       detail: {
         "at your rank": `p${inp.rankPct} of earners: ${atRank.toPrecision(3)} TAO/day ($${money(atRank * TAO)}/day) if you earn`,
-        "chance of earning": `${pct(1 - sn.zero_share)} (share of slots earning now); headline = rank × chance`,
+        "chance of earning": `${pct(chance)} (${newcomers ? "newcomers earning" : "share of slots earning now"}); headline = rank × chance`,
+        ...(sn.new_n != null ? { newcomers: `${sn.new_earners} of ${sn.new_n} slots registered in the last 14 days earn` +
+          ((sn.new_earners ?? 0) > 0 ? `; median earner ${(sn.new_median ?? 0).toPrecision(3)} TAO/day ($${money((sn.new_median ?? 0) * TAO)})` : "") } : {}),
+        ...(sn.max_slots != null ? { seats: `${sn.slots} of ${sn.max_slots} filled; a full subnet prunes the weakest slot to admit you` } : {}),
         "rank spread": `ranked 10th–90th percentile among earners: $${money(sn.p.p10 * TAO)}–$${money(sn.p.p90 * TAO)}/day (top $${money(sn.p.top * TAO)})`,
         earners: `${sn.earners} of ${sn.n} slots`, registration: `${sn.burn_tao.toPrecision(3)} TAO ($${money(burnUsd)})`,
         immunity: `${sn.immunity_blocks} blocks (~${(sn.immunity_blocks / 7200).toFixed(1)} days)`,
         "TAO volatility": `${pct(s.vol.sigma)}/yr (${s.vol.kind}); alpha price risk not modelled`,
         ...(sn.sell_pressure != null ? { "pool": `${money(sn.tao_in ?? 0)} TAO reserve; miners are paid ${((sn.sell_pressure) * 100).toFixed(1)}% of it a day` } : {}),
         ...(sn.top3_share != null ? { wallets: `top 3 wallets take ${pct(sn.top3_share)} of rewards` } : {}),
-        ...(hw && typeof hw !== "boolean" && hw.note ? { hardware: hw.note } : {}),
+        ...(known?.note ? { hardware: known.note } : {}),
         ...(rent ? { "net $/TFLOP-hour": (s.netDay / (gpu.fp32 * 24)).toPrecision(3) } : {}),
       },
     });
@@ -224,7 +245,7 @@ export function gpuRows(inp: Inputs, latest: Latest, bench: Bench, tables: Table
       if (!tables.fees[m]?.confirmed) flags.push(`fee ${pct(fee)} unconfirmed`);
       if (inp.util == null && q.util == null) flags.push(`utilisation assumed ${pct(u0)}`);
       rows.push({
-        kind: "rent", label: `Rent out on ${MARKET_NAMES[m] ?? m}`, where: MARKET_NAMES[m] ?? m, chance: u0,
+        kind: "rent", label: `Rent out on ${MARKET_NAMES[m] ?? m}`, where: MARKET_NAMES[m] ?? m, chance: u0, usesGpu: true,
         // When power costs more than renting earns, more utilisation is worse, so order the band's ends.
         netDay: net(u0), p10: Math.min(net(lo), net(hi)) * H, p50: net(u0) * H, p90: Math.max(net(lo), net(hi)) * H,
         breakEvenPrice: Number.isFinite(be) ? { value: be, pctFromNow: be / q.med - 1, unit: "$/h" } : undefined,

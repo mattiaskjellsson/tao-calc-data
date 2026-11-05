@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 RAO = 1_000_000_000
 BLOCKS_PER_DAY = 7200
 MINER_SHARE = 0.41
+NEWCOMER_DAYS = 14
 UNIT = {"h": 1, "kh": 1e3, "mh": 1e6, "gh": 1e9, "th": 1e12, "ph": 1e15, "eh": 1e18}
 
 
@@ -39,7 +40,9 @@ def subnet_stats(mg: dict) -> dict:
     price = mg["tao_in"] / mg["alpha_in"] if mg["alpha_in"] else 0.0
     pool = mg["alpha_out_emission"] / RAO * BLOCKS_PER_DAY * MINER_SHARE * price
     # UIDs held by the subnet owner's coldkey are where burned incentive goes, so they don't count.
-    pairs = [(ck, i) for ck, i in zip(mg["coldkeys"], mg["incentives"]) if ck != mg["owner_coldkey"]]
+    regs = mg.get("block_at_registration") or [None] * len(mg["coldkeys"])
+    slots = [(ck, i, r) for ck, i, r in zip(mg["coldkeys"], mg["incentives"], regs) if ck != mg["owner_coldkey"]]
+    pairs = [(ck, i) for ck, i, _ in slots]
     miners = [i for _, i in pairs]
     total = sum(miners)
     by_wallet: dict[str, float] = {}
@@ -48,6 +51,11 @@ def subnet_stats(mg: dict) -> dict:
     tao_in = mg["tao_in"] / RAO
     values = [i / total * pool if total else 0.0 for i in miners]
     earners = sorted(v for v in values if v > 0)
+    # What newcomers get: slots registered in the last 14 days, a measured stand-in for "a new miner here".
+    # ponytail: fixed 14-day window; tune per subnet (immunity, tempo) once the archive has history.
+    block = mg.get("block")
+    newcomer = [v for (_, _, r), v in zip(slots, values) if block and r is not None and block - r < NEWCOMER_DAYS * BLOCKS_PER_DAY]
+    new_earning = sorted(v for v in newcomer if v > 0)
 
     def pick(pct):
         return earners[math.floor(pct / 100 * (len(earners) - 1))] if earners else 0.0
@@ -59,6 +67,9 @@ def subnet_stats(mg: dict) -> dict:
         # Warning signs: a few wallets farming most slots, and miners' daily payout large against the pool's TAO.
         "top3_share": sum(sorted(by_wallet.values(), reverse=True)[:3]) / total if total else 0.0,
         "tao_in": tao_in, "sell_pressure": pool / tao_in if tao_in else 1.0,
+        "slots": mg.get("num_uids", len(mg["coldkeys"])), "max_slots": mg.get("max_uids", len(mg["coldkeys"])),
+        "new_n": len(newcomer), "new_earners": len(new_earning),
+        "new_median": statistics.median(new_earning) if new_earning else 0.0,
         "p": {**{f"p{q}": pick(q) for q in (10, 25, 50, 75, 90)}, "top": earners[-1] if earners else 0.0},
     }
 
@@ -319,7 +330,8 @@ def reduce(raw: dict, tables: dict, now: datetime) -> dict:
                 s = subnet_stats(mg)
                 if s["p"]["top"] > 0:
                     s["p"] = {k: sig(v) for k, v in s["p"].items()}
-                    s.update(top3_share=sig(s["top3_share"], 3), tao_in=sig(s["tao_in"]), sell_pressure=sig(s["sell_pressure"], 3))
+                    s.update(top3_share=sig(s["top3_share"], 3), tao_in=sig(s["tao_in"]), sell_pressure=sig(s["sell_pressure"], 3),
+                             new_median=sig(s["new_median"]))
                     s.update(price_tao=sig(s["price_tao"]), pool_tao_day=sig(s["pool_tao_day"]),
                              burn_tao=sig(s["burn_tao"]), zero_share=sig(s["zero_share"], 3))
                     subnets.append(s)

@@ -31,6 +31,16 @@ details.more summary { cursor: pointer; color: var(--muted); font-size: 0.9rem; 
 details.more[open] { display: flex; flex-wrap: wrap; gap: 12px 18px; }
 details.more[open] summary { flex-basis: 100%; }
 .budget { margin-bottom: 10px; max-width: 12rem; }
+form > label.check { flex-direction: row; align-items: center; gap: 6px; font-weight: 500; }
+figure.cone { margin: 0 0 12px; max-width: 640px; }
+figure.cone svg { width: 100%; height: auto; display: block; touch-action: pan-y; }
+.cone .band { fill: var(--accent); opacity: 0.16; }
+.cone .mid { stroke: var(--accent); stroke-width: 2; }
+.cone .be { stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 5 4; }
+.cone .xh { stroke: var(--line); stroke-width: 1; }
+.cone text { fill: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.cone .tip { fill: var(--ink); }
+figure.cone figcaption { color: var(--muted); font-size: 0.82rem; margin-top: 4px; }
 body.mode-rent .own-only, body.mode-own .rent-only { display: none; }
 
 #banner { margin-top: 12px; }

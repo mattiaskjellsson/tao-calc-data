@@ -171,3 +171,15 @@ def test_subnet_stats_flags_wallet_concentration_and_sell_pressure():
     assert math.isclose(s["top3_share"], 0.8)  # a holds 2 of 5 earning units, b and c one each
     assert math.isclose(s["tao_in"], 2.0)
     assert math.isclose(s["sell_pressure"], s["pool_tao_day"] / 2.0)  # miners' daily payout vs the pool's TAO reserve
+
+
+def test_subnet_stats_newcomers_and_seats():
+    m = mg(["OWN", "a", "b", "c", "d", "e", "f"], [9.0, 1.0, 1.0, 1.0, 0.0, 0.0, 2.0])
+    m.update(block=200_000, num_uids=7, max_uids=10,
+             block_at_registration=[0, 0, 0, 200_000 - 7200, 200_000 - 7200, 200_000 - 3600, 200_000 - 10 * 7200])
+    s = subnet_stats(m)
+    assert (s["slots"], s["max_slots"]) == (7, 10)
+    # newcomers = non-owner slots registered within 14 days: c, d, e, f; c and f earn
+    assert (s["new_n"], s["new_earners"]) == (4, 2)
+    pool = s["pool_tao_day"]
+    assert math.isclose(s["new_median"], (1 / 5 * pool + 2 / 5 * pool) / 2)

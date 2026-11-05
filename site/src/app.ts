@@ -1,4 +1,4 @@
-import { buyRows, gpuRows, rentCost, sortRows, MARKET_NAMES, type Bench, type BuyRow, type Inputs, type Latest, type Row, type SortKey, type Tables } from "./calc.js";
+import { buyRows, gpuRows, priceCone, rentCost, sortRows, MARKET_NAMES, type Bench, type BuyRow, type Inputs, type Latest, type Row, type SortKey, type Tables } from "./calc.js";
 
 const DATA = new URLSearchParams(location.search).get("data") ?? "https://raw.githubusercontent.com/mattiaskjellsson/tao-calc-data/main/site-data/";
 const STALE_HOURS = 3;
@@ -57,7 +57,10 @@ function breakEven(r: Row, mode: string) {
 
 function renderRows(inp: Inputs) {
   const f = new FormData(form), key = String(f.get("sort") ?? "p50") as SortKey, minChance = Number(f.get("minChance") ?? 0);
-  const rows = sortRows(gpuRows(inp, latest, bench, tables, new Date()).filter((r) => r.chance >= minChance), key, desc);
+  const all = gpuRows(inp, latest, bench, tables, new Date()).filter((r) => r.chance >= minChance);
+  const nonGpu = all.filter((r) => r.usesGpu === false).length;
+  const rows = sortRows(f.get("nonGpu") === "on" ? all : all.filter((r) => r.usesGpu !== false), key, desc);
+  $<HTMLElement>("#nongpu-count").textContent = nonGpu ? `(${nonGpu})` : "";
   document.querySelectorAll<HTMLButtonElement>("button.sort").forEach((b) => {
     b.classList.toggle("active", b.dataset.sort === key);
     b.classList.toggle("asc", b.dataset.sort === key && !desc);
@@ -73,7 +76,7 @@ function renderRows(inp: Inputs) {
       <td data-label="Break-even">${breakEven(r, inp.mode)}</td>
       <td data-label="">${flagsHtml(r.flags)}</td></tr>`;
     const detail = open.has(key)
-      ? `<tr class="detail"><td colspan="6"><dl>${Object.entries(r.detail).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")}</dl></td></tr>`
+      ? `<tr class="detail"><td colspan="6">${coneHtml(r, inp.horizon)}<dl>${Object.entries(r.detail).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")}</dl></td></tr>`
       : "";
     return main + detail;
   }).join("");
@@ -87,6 +90,49 @@ function renderRows(inp: Inputs) {
   $<HTMLElement>("#gpu-title").textContent = inp.mode === "own"
     ? `What a ${gpu.name} can do at $${inp.kwh}/kWh`
     : rent ? `Renting a ${gpu.name}: cheapest $${rent.usdHour.toFixed(2)}/h on ${MARKET_NAMES[rent.market]}` : `No ${gpu.name} for rent right now`;
+}
+
+const SOURCE = { implied: "implied by Binance options, the market's own forecast", realised: "from 30-day realised volatility", assumed: "assumed volatility (no market data)" };
+const price = (v: number) => `$${v >= 1 ? v.toPrecision(4) : v.toPrecision(3)}`;
+const CONE = { w: 600, h: 170, l: 8, r: 150, t: 10, b: 24 };
+
+/** Where the coin this row is paid in could trade over the horizon (p10/p50/p90), with the break-even price. */
+function coneHtml(r: Row, H: number): string {
+  if (!r.price || !(r.price.spot > 0) || H < 1) return "";
+  const { tag, spot, sigma, kind } = r.price, cone = priceCone(spot, sigma, H), end = cone[H];
+  const be = r.breakEvenPrice && r.breakEvenPrice.unit === `$/${tag}` ? r.breakEvenPrice.value : null;
+  const near = be != null && be > end.p10 * 0.5 && be < end.p90 * 1.5; // only stretch the axis for a nearby break-even
+  const yMin = Math.min(end.p10, near ? (be as number) : Infinity) * 0.95, yMax = Math.max(end.p90, near ? (be as number) : 0) * 1.05;
+  const x = (d: number) => CONE.l + ((CONE.w - CONE.l - CONE.r) * d) / H;
+  const y = (v: number) => CONE.t + (CONE.h - CONE.t - CONE.b) * (1 - (v - yMin) / (yMax - yMin));
+  const band = cone.map((c) => `${x(c.day)},${y(c.p90)}`).concat([...cone].reverse().map((c) => `${x(c.day)},${y(c.p10)}`)).join(" ");
+  const label = (v: number, text: string) => `<text class="lbl" x="${x(H) + 6}" y="${y(v) + 4}">${esc(text)} ${price(v)}</text>`;
+  const beLine = near
+    ? `<line class="be" x1="${x(0)}" x2="${x(H)}" y1="${y(be as number)}" y2="${y(be as number)}"/>${label(be as number, "break-even")}`
+    : "";
+  return `<figure class="cone"><svg viewBox="0 0 ${CONE.w} ${CONE.h}" role="img" data-spot="${spot}" data-sigma="${sigma}" data-h="${H}"
+      aria-label="${esc(tag)} price range over ${H} days">
+    <polygon class="band" points="${band}"/><line class="mid" x1="${x(0)}" x2="${x(H)}" y1="${y(spot)}" y2="${y(spot)}"/>
+    ${beLine}${label(end.p90, "good")}${label(spot, "typical")}${label(end.p10, "bad")}
+    <text class="axis" x="${x(0)}" y="${CONE.h - 6}">today ${price(spot)}</text>
+    <text class="axis" x="${x(H)}" y="${CONE.h - 6}" text-anchor="end">+${H} days</text>
+    <line class="xh" y1="${CONE.t}" y2="${CONE.h - CONE.b}" x1="-10" x2="-10"/><text class="tip" x="${x(0)}" y="${CONE.t + 10}"></text>
+  </svg><figcaption>${esc(tag)} price range, ${esc(SOURCE[kind])}, no drift assumed. On day ${H}: bad ${price(end.p10)} · typical ${price(spot)} · good ${price(end.p90)}${
+    be != null && !near ? `. Break-even ${price(be)} is off this chart` : ""}.</figcaption></figure>`;
+}
+
+function coneHover(e: PointerEvent) {
+  const svg = (e.target as Element).closest("figure.cone svg") as SVGSVGElement | null;
+  if (!svg) return;
+  const H = Number(svg.dataset.h), box = svg.getBoundingClientRect();
+  const vx = ((e.clientX - box.left) / box.width) * CONE.w;
+  const day = Math.round(Math.min(H, Math.max(0, ((vx - CONE.l) / (CONE.w - CONE.l - CONE.r)) * H)));
+  const c = priceCone(Number(svg.dataset.spot), Number(svg.dataset.sigma), H)[day];
+  const lx = CONE.l + ((CONE.w - CONE.l - CONE.r) * day) / H;
+  svg.querySelector(".xh")?.setAttribute("x1", String(lx));
+  svg.querySelector(".xh")?.setAttribute("x2", String(lx));
+  const tip = svg.querySelector(".tip") as SVGTextElement;
+  tip.textContent = `day ${day}: ${price(c.p10)} · ${price(c.p50)} · ${price(c.p90)}`;
 }
 
 function renderBuy(inp: Inputs) {
@@ -159,6 +205,7 @@ async function main() {
     render();
   };
   $<HTMLElement>("#rows").addEventListener("click", toggle);
+  $<HTMLElement>("#rows").addEventListener("pointermove", coneHover);
   $<HTMLElement>("#rows").addEventListener("keydown", (e) => { if ((e as KeyboardEvent).key === "Enter") toggle(e); });
   render();
 }
