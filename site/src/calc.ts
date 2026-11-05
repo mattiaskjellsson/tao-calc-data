@@ -180,8 +180,9 @@ export function gpuRows(inp: Inputs, latest: Latest, bench: Bench, tables: Table
     const burnUsd = sn.burn_tao * TAO, watts = gpu.tdp;
     const s = settle(inp, latest, tables, { units: taoDay * H, tag: "TAO", costDay: powerCost(watts), fixedCost: burnUsd, perDayUnits: taoDay });
     const flags = [`${pct(sn.zero_share)} of slots earn 0`];
-    // ponytail: fixed thresholds (half the rewards to 3 wallets; payout >1% of the pool's TAO a day); tune with archive history.
-    if ((sn.top3_share ?? 0) > 0.5) flags.push(`${pct(sn.top3_share as number)} of rewards go to 3 wallets`);
+    // ponytail: fixed thresholds (3 wallets >75% of rewards on a subnet with 10+ earners; payout >1% of the pool's TAO a day);
+    // tune with archive history. Below 10 earners the winner-take-all flag already says it.
+    if (sn.earners >= 10 && (sn.top3_share ?? 0) > 0.75) flags.push(`${pct(sn.top3_share as number)} of rewards go to 3 wallets`);
     if ((sn.sell_pressure ?? 0) > 0.01)
       flags.push(`miners sell ${((sn.sell_pressure as number) * 100).toFixed(1)}% of the pool's TAO a day: alpha price likely to fall`);
     if (winnerTakeAll) flags.unshift(`winner-take-all: ${sn.earners} of ${sn.n} slots earn`);
