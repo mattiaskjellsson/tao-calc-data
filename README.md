@@ -84,8 +84,11 @@ To start collecting Vast or RunPod again, get their written permission and remov
 
 - **PoW:** `coins/day = hashrate / network hashrate × 86400 / block time × block reward × (1 − pool fee)`.
 - **Bittensor:** each non-owner slot's TAO/day is `incentive / Σ incentive × alpha emission × 7200 × 0.41 × alpha price`. This is the same formula as the tao project's `brain/earnings.py`.
-  - The headline is your rank among earners (default p25) × the share of slots earning now.
+  - The headline is your rank among earners (default p25) × the chance of earning. That chance is what newcomers actually got: the share of slots registered in the last 14 days that earn. With fewer than 5 newcomers, it's the share of all slots earning.
   - Subnets with fewer than 10 earners count as winner-take-all, worth 0 for a new slot.
+  - Rows are flagged when 3 wallets take over 75% of rewards, or when miners' daily payout is over 1% of the pool's TAO reserve.
+  - `subnet_hw` in `tables.json` records what each audited subnet's miner actually runs. Subnets that don't use a GPU are hidden by default, and subnets marked `skip` (staking-like) never appear.
+- **Buying hashrate:** the NiceHash order book is walked to fill your budget, never below NiceHash's own paying price. Margins over +100% are flagged as suspect.
 - **Rent-out:** `median price × 24 × utilisation × (1 − platform fee)`, minus power. The range is utilisation ± 20 percentage points.
 - **Range:** lognormal prices with no drift, using the average-price quantile `S·exp(z·σ·√(T/3))`. Network growth comes from the 24 h difficulty trend, capped at ±0.2%/day, and halvings from `tables.json`.
 

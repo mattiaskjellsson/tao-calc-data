@@ -290,12 +290,15 @@ export function buyRows(inp: Inputs, latest: Latest, tables: Tables): BuyRow[] {
     const nh = latest.nicehash[algo];
     if (nh?.book.length) {
       const fee = tables.defaults.buy_fee_nicehash;
-      const fill = fillBook(nh.book, inp.budget / BTC, fee);
+      // Nobody buys below what NiceHash pays sellers: stray cheap orders in the book aren't really for sale.
+      const book = nh.book.map(([p, c]) => [Math.max(p, nh.pay), c] as [number, number]);
+      const fill = fillBook(book, inp.budget / BTC, fee);
       const spend = fill.hs * fill.priceBtc * (1 + fee) * BTC, revenue = fill.hs * best.usdPerHs;
+      const u = si(fill.hs);
       if (spend > 0) out.push({
         algo, venue: "nicehash", coin: best.coin.name, marginPct: (revenue - spend) / spend, spend, revenue,
         flags: fill.exhausted ? [`book exhausted: only $${money(spend)} of $${inp.budget.toLocaleString("en-US")}/day fillable`] : [],
-        detail: { bought: `${fill.hs.toPrecision(3)} H/s at ${(fill.priceBtc * 1e12).toPrecision(3)} BTC/TH/day`, fee: pct(fee) },
+        detail: { bought: `${u.text} at ${(fill.priceBtc * u.factor).toPrecision(3)} BTC per ${u.prefix}H/s per day`, fee: pct(fee) },
       });
     }
     const mrr = latest.mrr[algo];
@@ -305,9 +308,18 @@ export function buyRows(inp: Inputs, latest: Latest, tables: Tables): BuyRow[] {
         algo, venue: "mrr", coin: best.coin.name, marginPct: (revenue - inp.budget) / inp.budget, spend: inp.budget, revenue,
         // ponytail: MRR priced at its suggested price, not walked through live rig listings.
         flags: ["priced at MRR's suggested price"],
-        detail: { bought: `${hs.toPrecision(3)} H/s`, fee: pct(fee) },
+        detail: { bought: si(hs).text, fee: pct(fee) },
       });
     }
   }
+  for (const r of out)
+    if (r.marginPct > 1) r.flags.push("margin over +100%: usually an illiquid coin or a stale price, check before trusting");
   return out.filter((r) => Number.isFinite(r.marginPct)).sort((a, b) => b.marginPct - a.marginPct);
+}
+
+/** 4810 H/s → "4.81 kH/s" (for Sol algorithms read Sol/s). */
+function si(hs: number) {
+  const steps: [string, number][] = [["E", 1e18], ["P", 1e15], ["T", 1e12], ["G", 1e9], ["M", 1e6], ["k", 1e3], ["", 1]];
+  const [prefix, factor] = steps.find(([, f]) => hs >= f) ?? ["", 1];
+  return { prefix, factor, text: `${(hs / factor).toPrecision(3)} ${prefix}H/s` };
 }

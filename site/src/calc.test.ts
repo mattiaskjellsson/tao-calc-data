@@ -207,3 +207,16 @@ test("rows that are paid in a coin carry its price and volatility for the chart"
   assert.equal((rows.find((r) => r.kind === "tao") as Row).price?.tag, "TAO");
   assert.equal((rows.find((r) => r.kind === "rent") as Row).price, undefined);
 });
+
+test("buy rows never price hashrate below what NiceHash pays sellers, and flag huge margins", () => {
+  const L = latest();
+  L.nicehash.kawpow = { pay: 5.6e-14, book: [[1e-16, 4.8e3], [5.8e-14, 1e9], [6e-14, 3e9]] }; // a stray order far below market
+  const nh = buyRows({ ...own, mode: "rent", budget: 10 }, L, tables).find((r) => r.venue === "nicehash") as ReturnType<typeof buyRows>[number];
+  const fill = fillBook([[5.6e-14, 4.8e3], [5.8e-14, 1e9], [6e-14, 3e9]], 10 / 78000, 0.03);
+  assert.ok(Math.abs(nh.spend - fill.hs * fill.priceBtc * 1.03 * 78000) < 1e-9);
+  assert.ok(Math.abs(nh.spend - 10) < 1e-6); // the whole budget fills at a real price
+  const cheap = latest();
+  cheap.nicehash.kawpow = { pay: 1e-16, book: [[1e-16, 1e12]] };
+  const wild = buyRows({ ...own, mode: "rent", budget: 10 }, cheap, tables).find((r) => r.venue === "nicehash");
+  assert.ok(wild && wild.marginPct > 1 && wild.flags.some((f) => f.startsWith("margin over +100%")));
+});
