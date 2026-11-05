@@ -39,8 +39,13 @@ def subnet_stats(mg: dict) -> dict:
     price = mg["tao_in"] / mg["alpha_in"] if mg["alpha_in"] else 0.0
     pool = mg["alpha_out_emission"] / RAO * BLOCKS_PER_DAY * MINER_SHARE * price
     # UIDs held by the subnet owner's coldkey are where burned incentive goes, so they don't count.
-    miners = [i for ck, i in zip(mg["coldkeys"], mg["incentives"]) if ck != mg["owner_coldkey"]]
+    pairs = [(ck, i) for ck, i in zip(mg["coldkeys"], mg["incentives"]) if ck != mg["owner_coldkey"]]
+    miners = [i for _, i in pairs]
     total = sum(miners)
+    by_wallet: dict[str, float] = {}
+    for ck, i in pairs:
+        by_wallet[ck] = by_wallet.get(ck, 0.0) + i
+    tao_in = mg["tao_in"] / RAO
     values = [i / total * pool if total else 0.0 for i in miners]
     earners = sorted(v for v in values if v > 0)
 
@@ -51,6 +56,9 @@ def subnet_stats(mg: dict) -> dict:
         "netuid": mg["netuid"], "name": mg.get("name") or "", "price_tao": price, "pool_tao_day": pool,
         "burn_tao": mg["burn"] / RAO, "immunity_blocks": mg["immunity_period"], "n": len(values), "earners": len(earners),
         "zero_share": (len(values) - len(earners)) / len(values) if values else 1.0,
+        # Warning signs: a few wallets farming most slots, and miners' daily payout large against the pool's TAO.
+        "top3_share": sum(sorted(by_wallet.values(), reverse=True)[:3]) / total if total else 0.0,
+        "tao_in": tao_in, "sell_pressure": pool / tao_in if tao_in else 1.0,
         "p": {**{f"p{q}": pick(q) for q in (10, 25, 50, 75, 90)}, "top": earners[-1] if earners else 0.0},
     }
 
@@ -311,6 +319,7 @@ def reduce(raw: dict, tables: dict, now: datetime) -> dict:
                 s = subnet_stats(mg)
                 if s["p"]["top"] > 0:
                     s["p"] = {k: sig(v) for k, v in s["p"].items()}
+                    s.update(top3_share=sig(s["top3_share"], 3), tao_in=sig(s["tao_in"]), sell_pressure=sig(s["sell_pressure"], 3))
                     s.update(price_tao=sig(s["price_tao"]), pool_tao_day=sig(s["pool_tao_day"]),
                              burn_tao=sig(s["burn_tao"]), zero_share=sig(s["zero_share"], 3))
                     subnets.append(s)

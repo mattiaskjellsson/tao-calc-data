@@ -27,7 +27,9 @@ const latest = (): Latest => ({
   },
   subnets: [
     { netuid: 9, name: "Big", price_tao: 0.02, pool_tao_day: 900, burn_tao: 0.5, immunity_blocks: 5000, n: 200, earners: 100,
-      zero_share: 0.5, p: { p10: 1, p25: 2, p50: 4, p75: 8, p90: 16, top: 50 } },
+      zero_share: 0.5, p: { p10: 1, p25: 2, p50: 4, p75: 8, p90: 16, top: 50 }, top3_share: 0.95, sell_pressure: 0.047, tao_in: 2455 },
+    { netuid: 11, name: "Healthy", price_tao: 0.02, pool_tao_day: 9, burn_tao: 0.5, immunity_blocks: 5000, n: 200, earners: 150,
+      zero_share: 0.25, p: { p10: 1, p25: 2, p50: 4, p75: 8, p90: 16, top: 50 }, top3_share: 0.2, sell_pressure: 0.002, tao_in: 4500 },
     { netuid: 82, name: "Staking", price_tao: 0.04, pool_tao_day: 114, burn_tao: 8, immunity_blocks: 65535, n: 66, earners: 64,
       zero_share: 0.03, p: { p10: 1, p25: 1.9, p50: 1.9, p75: 1.9, p90: 2, top: 2 } },
     { netuid: 7, name: "Solo", price_tao: 0.01, pool_tao_day: 70, burn_tao: 0.1, immunity_blocks: 5000, n: 254, earners: 1,
@@ -153,4 +155,13 @@ test("sortRows orders by the chosen column, ties broken by p50", () => {
 test("subnets marked skip in the hardware table (not compute) are left out", () => {
   const rows = gpuRows(own, latest(), bench, tables, NOW);
   assert.ok(!rows.some((r) => r.label.startsWith("SN82 ")));
+});
+
+test("Bittensor rows warn about wallet concentration and sell pressure", () => {
+  const rows = gpuRows(own, latest(), bench, tables, NOW);
+  const big = rows.find((r) => r.label.includes("Big")) as Row;
+  assert.ok(big.flags.includes("95% of rewards go to 3 wallets"));
+  assert.ok(big.flags.includes("miners sell 4.7% of the pool's TAO a day: alpha price likely to fall"));
+  const ok = rows.find((r) => r.label.includes("Healthy")) as Row;
+  assert.ok(!ok.flags.some((f) => f.includes("wallets") || f.includes("miners sell")));
 });

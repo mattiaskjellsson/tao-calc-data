@@ -14,7 +14,8 @@ export type Tables = {
 };
 export type Coin = { name: string; tag: string; algo: string; block_time: number; block_reward: number; nethash: number; growth_day: number; list: string };
 export type Subnet = { netuid: number; name: string; price_tao: number; pool_tao_day: number; burn_tao: number; immunity_blocks: number;
-  n: number; earners: number; zero_share: number; p: { p10: number; p25: number; p50: number; p75: number; p90: number; top: number } };
+  n: number; earners: number; zero_share: number; p: { p10: number; p25: number; p50: number; p75: number; p90: number; top: number };
+  top3_share?: number; sell_pressure?: number; tao_in?: number };
 export type Market = { min: number; med: number; n: number; util: number | null };
 export type Latest = {
   ts: string;
@@ -179,6 +180,10 @@ export function gpuRows(inp: Inputs, latest: Latest, bench: Bench, tables: Table
     const burnUsd = sn.burn_tao * TAO, watts = gpu.tdp;
     const s = settle(inp, latest, tables, { units: taoDay * H, tag: "TAO", costDay: powerCost(watts), fixedCost: burnUsd, perDayUnits: taoDay });
     const flags = [`${pct(sn.zero_share)} of slots earn 0`];
+    // ponytail: fixed thresholds (half the rewards to 3 wallets; payout >1% of the pool's TAO a day); tune with archive history.
+    if ((sn.top3_share ?? 0) > 0.5) flags.push(`${pct(sn.top3_share as number)} of rewards go to 3 wallets`);
+    if ((sn.sell_pressure ?? 0) > 0.01)
+      flags.push(`miners sell ${((sn.sell_pressure as number) * 100).toFixed(1)}% of the pool's TAO a day: alpha price likely to fall`);
     if (winnerTakeAll) flags.unshift(`winner-take-all: ${sn.earners} of ${sn.n} slots earn`);
     if (!hw || typeof hw === "boolean") flags.push("hardware needs unknown");
     else if (!hw.gpu) flags.push("CPU-only: your GPU isn't used");
@@ -190,10 +195,12 @@ export function gpuRows(inp: Inputs, latest: Latest, bench: Bench, tables: Table
       detail: {
         "at your rank": `p${inp.rankPct} of earners: ${atRank.toPrecision(3)} TAO/day ($${money(atRank * TAO)}/day) if you earn`,
         "chance of earning": `${pct(1 - sn.zero_share)} (share of slots earning now); headline = rank × chance`,
-        "rank spread": `p10–p90 of earners: $${money(sn.p.p10 * TAO)}–$${money(sn.p.p90 * TAO)}/day (top $${money(sn.p.top * TAO)})`,
+        "rank spread": `ranked 10th–90th percentile among earners: $${money(sn.p.p10 * TAO)}–$${money(sn.p.p90 * TAO)}/day (top $${money(sn.p.top * TAO)})`,
         earners: `${sn.earners} of ${sn.n} slots`, registration: `${sn.burn_tao.toPrecision(3)} TAO ($${money(burnUsd)})`,
         immunity: `${sn.immunity_blocks} blocks (~${(sn.immunity_blocks / 7200).toFixed(1)} days)`,
         "TAO volatility": `${pct(s.vol.sigma)}/yr (${s.vol.kind}); alpha price risk not modelled`,
+        ...(sn.sell_pressure != null ? { "pool": `${money(sn.tao_in ?? 0)} TAO reserve; miners are paid ${((sn.sell_pressure) * 100).toFixed(1)}% of it a day` } : {}),
+        ...(sn.top3_share != null ? { wallets: `top 3 wallets take ${pct(sn.top3_share)} of rewards` } : {}),
         ...(hw && typeof hw !== "boolean" && hw.note ? { hardware: hw.note } : {}),
         ...(rent ? { "net $/TFLOP-hour": (s.netDay / (gpu.fp32 * 24)).toPrecision(3) } : {}),
       },

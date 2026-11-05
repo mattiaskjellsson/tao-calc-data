@@ -163,3 +163,11 @@ def test_only_cleared_sources_go_to_the_public_archive():
     assert held == {"clore": {"x": 1}}
     assert "clore" not in TABLES["publish_raw"] and "wtm_gpu" not in TABLES["publish_raw"]  # terms don't allow it
     assert {"binance_24h", "bittensor", "nicehash_books", "hyperliquid"} <= set(TABLES["publish_raw"])
+
+
+def test_subnet_stats_flags_wallet_concentration_and_sell_pressure():
+    m = mg(["OWN", "a", "a", "b", "c", "d", "e"], [9.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0])
+    s = subnet_stats(m)
+    assert math.isclose(s["top3_share"], 0.8)  # a holds 2 of 5 earning units, b and c one each
+    assert math.isclose(s["tao_in"], 2.0)
+    assert math.isclose(s["sell_pressure"], s["pool_tao_day"] / 2.0)  # miners' daily payout vs the pool's TAO reserve

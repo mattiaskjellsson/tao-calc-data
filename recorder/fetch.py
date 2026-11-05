@@ -15,7 +15,7 @@ BINANCE = "https://data-api.binance.vision/api/v3"
 NICEHASH = "https://api2.nicehash.com/main/api/v2"
 DERIBIT = "https://www.deribit.com/api/v2/public"
 HL_COINS = ["xyz:GOLD", "xyz:NVDA", "xyz:TSLA", "xyz:AAPL", "xyz:GOOGL", "xyz:SP500", "xyz:SPCX", "xyz:CL", "xyz:VIX"]  # tao sn50/data.py
-METAGRAPH_KEYS = ("netuid", "name", "symbol", "tao_in", "alpha_in", "alpha_out_emission", "burn", "immunity_period",
+METAGRAPH_KEYS = ("netuid", "name", "symbol", "tao_in", "alpha_in", "alpha_out_emission", "tao_in_emission", "moving_price", "burn", "immunity_period",
                   "owner_coldkey", "num_uids", "max_uids", "hotkeys", "coldkeys", "incentives", "block_at_registration", "block")
 
 
