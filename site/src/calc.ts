@@ -10,7 +10,7 @@ export type Tables = {
   halvings: Record<string, [string, number][] | { decay_per_year: number } | boolean>;
   subnet_hw: Record<string, { gpu: boolean; vram?: number; gpus?: string[]; note?: string; skip?: boolean } | boolean>;
   defaults: { pool_fee: number; util: number; util_band: number; rank_pct: number; buy_fee_nicehash: number; budget: number;
-    vol_fallback: number; growth_cap_day: number; idle_frac: number; kwh: number; max_volume_share: number; thin_market_usd: number };
+    vol_fallback: number; growth_cap_day: number; idle_frac: number; kwh: number; max_volume_share: number; thin_market_usd: number; cpu_server_month: number };
 };
 export type Coin = { name: string; tag: string; algo: string; block_time: number; block_reward: number; nethash: number; growth_day: number; list: string;
   vol_btc?: number; lagging?: boolean }; // vol_btc: 24 h trading volume in BTC (WhatToMine)
@@ -198,6 +198,9 @@ export function gpuRows(inp: Inputs, latest: Latest, bench: Bench, tables: Table
     const chance = newcomers ? (sn.new_earners as number) / (sn.new_n as number) : 1 - sn.zero_share;
     const taoDay = atRank * chance;
     const burnUsd = sn.burn_tao * TAO, watts = gpu.tdp;
+    // A subnet that doesn't use a GPU needs only a small CPU server, whichever mode you're in.
+    const cpuOnly = known?.gpu === false;
+    const costDay = cpuOnly ? d.cpu_server_month / 30 : powerCost(watts);
     // Miners are paid in the subnet's alpha: value it at alpha × TAO, with both prices' volatility (archive-node history).
     const a = alpha?.subnets[String(sn.netuid)];
     const taoVol = latest.vol.TAO ?? { sigma: d.vol_fallback, kind: "assumed" as const };
@@ -205,7 +208,7 @@ export function gpuRows(inp: Inputs, latest: Latest, bench: Bench, tables: Table
       ? { units: (taoDay / sn.price_tao) * H, perDayUnits: taoDay / sn.price_tao, tag: `SN${sn.netuid} alpha`, spot: sn.price_tao * TAO,
           vol: { sigma: Math.hypot(taoVol.sigma, a.vol), kind: "realised" as const } }
       : { units: taoDay * H, perDayUnits: taoDay, tag: "TAO" };
-    const s = settle(inp, latest, tables, { ...paid, costDay: powerCost(watts), fixedCost: burnUsd });
+    const s = settle(inp, latest, tables, { ...paid, costDay, fixedCost: burnUsd });
     const flags = [`${pct(sn.zero_share)} of slots earn 0`];
     // ponytail: fixed thresholds (3 wallets >75% of rewards on a subnet with 10+ earners; payout >1% of the pool's TAO a day);
     // tune with archive history. Below 10 earners the winner-take-all flag already says it.
@@ -213,6 +216,7 @@ export function gpuRows(inp: Inputs, latest: Latest, bench: Bench, tables: Table
     if ((sn.sell_pressure ?? 0) > 0.01)
       flags.push(`miners sell ${((sn.sell_pressure as number) * 100).toFixed(1)}% of the pool's TAO a day: alpha price likely to fall`);
     if (winnerTakeAll) flags.unshift(`winner-take-all: ${sn.earners} of ${sn.n} slots earn`);
+    if (sn.new_n === 0) flags.push("nobody joined in the last 14 days: no data on how newcomers do");
     if (!known) flags.push("hardware needs unknown");
     else if (!known.gpu) flags.push("doesn't use a GPU (CPU or paid AI API)");
     if (a && a.change30 <= -0.3) flags.push(`alpha price fell ${pct(-a.change30)} in 30 days`);
@@ -220,10 +224,10 @@ export function gpuRows(inp: Inputs, latest: Latest, bench: Bench, tables: Table
     flags.push(`registration (${sn.burn_tao.toPrecision(3)} TAO) lost if pruned after immunity`);
     rows.push({
       kind: "tao", label: `SN${sn.netuid} ${sn.name}`.trim(), chance, usesGpu: known ? known.gpu : null, price: s.price,
-      where: [where("run a miner on this card"), `${sn.earners}/${sn.n} seats earn`,
+      where: [cpuOnly ? `run a miner on a small CPU server (~$${d.cpu_server_month}/month)` : where("run a miner on this card"), `${sn.earners}/${sn.n} seats earn`,
         ...(sn.max_slots && sn.slots != null ? [`${Math.max(0, sn.max_slots - sn.slots)} open`] : [])].join(" · "),
       netDay: s.netDay - burnUsd / H, p10: s.p10, p50: s.p50, p90: s.p90,
-      breakEvenPrice: s.breakEvenPrice, breakEvenKwh: kwhBreakEven(taoDay * H * TAO, burnUsd, watts), flags,
+      breakEvenPrice: s.breakEvenPrice, breakEvenKwh: cpuOnly ? undefined : kwhBreakEven(taoDay * H * TAO, burnUsd, watts), flags,
       detail: {
         "at your rank": `p${inp.rankPct} of earners: ${atRank.toPrecision(3)} TAO/day ($${money(atRank * TAO)}/day) if you earn`,
         "chance of earning": `${pct(chance)} (${newcomers ? "newcomers earning" : "share of slots earning now"}); headline = rank × chance`,

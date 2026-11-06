@@ -225,6 +225,6 @@
   },
   "defaults": {
     "pool_fee": 0.01, "util": 0.5, "util_band": 0.2, "rank_pct": 25, "buy_fee_nicehash": 0.03,
-    "budget": 10, "vol_fallback": 1.2, "growth_cap_day": 0.002, "idle_frac": 0.1, "kwh": 0.15, "max_volume_share": 0.05, "thin_market_usd": 1000
+    "budget": 10, "vol_fallback": 1.2, "growth_cap_day": 0.002, "idle_frac": 0.1, "kwh": 0.15, "max_volume_share": 0.05, "thin_market_usd": 1000, "cpu_server_month": 15
   }
 }

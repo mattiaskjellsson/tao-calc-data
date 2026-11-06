@@ -32,7 +32,7 @@ const latest = (): Latest => ({
       zero_share: 0.25, p: { p10: 1, p25: 2, p50: 4, p75: 8, p90: 16, top: 50 }, top3_share: 0.6, sell_pressure: 0.002, tao_in: 4500,
       slots: 201, max_slots: 256, new_n: 20, new_earners: 2, new_median: 1.5 },
     { netuid: 50, name: "CpuOnly", price_tao: 0.02, pool_tao_day: 9, burn_tao: 0.5, immunity_blocks: 5000, n: 100, earners: 50,
-      zero_share: 0.5, p: { p10: 1, p25: 2, p50: 4, p75: 8, p90: 16, top: 50 } },
+      zero_share: 0.5, p: { p10: 1, p25: 2, p50: 4, p75: 8, p90: 16, top: 50 }, new_n: 0, new_earners: 0 },
     { netuid: 36, name: "GpuRental", price_tao: 0.02, pool_tao_day: 9, burn_tao: 0.5, immunity_blocks: 5000, n: 100, earners: 50,
       zero_share: 0.5, p: { p10: 1, p25: 2, p50: 4, p75: 8, p90: 16, top: 50 } },
     { netuid: 82, name: "Staking", price_tao: 0.04, pool_tao_day: 114, burn_tao: 8, immunity_blocks: 65535, n: 66, earners: 64,
@@ -254,4 +254,21 @@ test("Bittensor rows are valued in the subnet's alpha, with alpha's own volatili
   assert.ok(big.flags.includes("alpha price fell 50% in 30 days"));
   const healthy = rows.find((r) => r.label.includes("Healthy")) as Row;
   assert.ok(healthy.flags.includes("alpha price up 200% in 30 days: pumps often reverse"));
+});
+
+test("subnets that don't use a GPU cost a small CPU server, not GPU power or GPU rent", () => {
+  for (const mode of ["own", "rent"] as const) {
+    const cpu = gpuRows({ ...own, mode }, latest(), bench, tables, NOW).find((r) => r.label.includes("CpuOnly")) as Row;
+    const taoDay = 2 * 0.5; // p25 of earners × share of slots earning (no newcomers to measure)
+    const expected = taoDay * 230 - tables.defaults.cpu_server_month / 30 - (0.5 * 230) / 30;
+    assert.ok(Math.abs(cpu.netDay - expected) < 1e-9, `${mode}: ${cpu.netDay} vs ${expected}`);
+    assert.ok(cpu.where.startsWith("run a miner on a small CPU server"));
+    assert.equal(cpu.breakEvenKwh, undefined);
+  }
+});
+
+test("subnets nobody joined recently are flagged: no evidence how newcomers do", () => {
+  const rows = gpuRows(own, latest(), bench, tables, NOW);
+  assert.ok((rows.find((r) => r.label.includes("CpuOnly")) as Row).flags.includes("nobody joined in the last 14 days: no data on how newcomers do"));
+  assert.ok(!(rows.find((r) => r.label.includes("Healthy")) as Row).flags.some((f) => f.startsWith("nobody joined")));
 });
