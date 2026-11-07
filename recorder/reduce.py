@@ -100,67 +100,18 @@ def realised_vol(closes: list[float]) -> float:
     return statistics.pstdev(rets) * math.sqrt(365) if len(rets) > 1 else 0.0
 
 
-def nicehash_book(orders: list, price_factor: float, market_factor: float, levels: int = 20) -> list:
-    if price_factor <= 0 or market_factor <= 0:
-        return []
-    live = sorted((float(o["price"]) / price_factor, float(o["acceptedSpeed"]) * market_factor)
-                  for o in orders if o.get("alive", True) and float(o["acceptedSpeed"]) > 0)
-    cum, book = 0.0, []
-    for price, speed in live:
-        cum += speed
-        book.append([price, cum])
-    if len(book) > levels:
-        # Keeping fewer levels rounds each fill up to the next kept level's price: conservative.
-        step = len(book) / levels
-        book = [book[min(len(book) - 1, math.ceil((i + 1) * step) - 1)] for i in range(levels)]
-    return [[sig(p), sig(c)] for p, c in book]
-
-
 def _prices(raw: dict) -> dict[str, float]:
+    """BTC and TAO in USD: what every row is paid in. Binance first, CoinGecko as the fallback."""
     usd = {}
     if not failed(raw.get("binance_24h")):
         for t in raw.get("binance_24h") or []:
-            if t["symbol"].endswith("USDT") and float(t.get("lastPrice") or 0) > 0:
+            if t["symbol"] in ("BTCUSDT", "TAOUSDT") and float(t.get("lastPrice") or 0) > 0:
                 usd[t["symbol"][:-4]] = float(t["lastPrice"])
     cg = raw.get("coingecko")
     if cg and not failed(cg):
         usd.setdefault("BTC", cg.get("bitcoin", {}).get("usd"))
         usd.setdefault("TAO", cg.get("bittensor", {}).get("usd"))
     return {k: v for k, v in usd.items() if v}
-
-
-def _coins(raw: dict, tables: dict, binance: dict[str, float]) -> tuple[list, dict, set]:
-    algo_of = {w: aid for aid, a in tables["algos"].items() for w in a["wtm"]}
-    cap = tables["defaults"]["growth_cap_day"]
-    coins, usd, seen, verified = [], {}, set(), {"BTC", "TAO"}
-    for lst in ("wtm_gpu", "wtm_asic"):
-        src = raw.get(lst)
-        if not src or failed(src):
-            continue
-        for name, c in src["coins"].items():
-            aid = algo_of.get(c["algorithm"])
-            if name.startswith("Nicehash") or aid is None or name in seen:
-                continue
-            rate = float(c.get("exchange_rate") or 0)
-            # WhatToMine quotes rates in BTC, except Bitcoin's own row, which is in USD.
-            wtm_price = rate if c["tag"] == "BTC" or c.get("exchange_rate_curr") == "USD" else rate * binance.get("BTC", 0)
-            # Binance tickers can be another token with the same symbol, or a delisted coin frozen at its last price.
-            bn = binance.get(c["tag"], 0)
-            price = bn if wtm_price > 0 and 0.9 <= bn / wtm_price <= 1.1 else wtm_price
-            nethash, bt, reward = float(c.get("nethash") or 0), float(c.get("block_time") or 0), float(c.get("block_reward") or 0)
-            if min(price, nethash, bt, reward) <= 0:
-                continue
-            d, d24 = float(c.get("difficulty") or 0), float(c.get("difficulty24") or 0)
-            # ponytail: 24 h difficulty change as the growth trend is naive; switch to the archive's 30-day trend.
-            growth = max(-cap, min(cap, math.log(d / d24))) if d > 0 and d24 > 0 else 0.0
-            seen.add(name)
-            usd[c["tag"]] = price
-            if price == bn:
-                verified.add(c["tag"])
-            coins.append({"name": name, "tag": c["tag"], "algo": aid, "block_time": bt, "block_reward": sig(reward),
-                          "nethash": sig(nethash), "growth_day": sig(growth, 4), "list": lst[4:],
-                          "vol_btc": sig(float(c.get("exchange_rate_vol") or 0), 4), "lagging": bool(c.get("lagging"))})
-    return coins, usd, verified
 
 
 class _Acc:
@@ -256,7 +207,7 @@ def _rentals(raw: dict, tables: dict) -> tuple[dict, dict, dict]:
 
 
 def _nicehash(raw: dict, tables: dict) -> dict:
-    stats, algos, books = raw.get("nicehash_stats"), raw.get("nicehash_algos"), raw.get("nicehash_books") or {}
+    stats, algos = raw.get("nicehash_stats"), raw.get("nicehash_algos")
     if not stats or failed(stats) or not algos or failed(algos):
         return {}
     meta = {a["algorithm"]: a for a in algos["miningAlgorithms"]}
@@ -268,14 +219,8 @@ def _nicehash(raw: dict, tables: dict) -> dict:
     out = {}
     for aid, a in tables["algos"].items():
         mkt = a.get("nh_mkt")
-        if not mkt or mkt not in pay:
-            continue
-        book = books.get(mkt)
-        entry = {"pay": sig(pay[mkt]), "book": []}
-        if book and not failed(book):
-            b = book["stats"]["BTC"]
-            entry["book"] = nicehash_book(b["orders"], float(b["priceFactor"]), float(b["marketFactor"]))
-        out[aid] = entry
+        if mkt in pay:
+            out[aid] = {"pay": sig(pay[mkt])}
     return out
 
 
@@ -299,14 +244,14 @@ def _mrr(raw: dict, tables: dict) -> dict:
     return out
 
 
-def _vol(raw: dict, usd: dict, verified: set, now: datetime, fallback: float) -> dict:
+def _vol(raw: dict, usd: dict, now: datetime, fallback: float) -> dict:
     iv = {}
     if raw.get("binance_options") and not failed(raw["binance_options"]):
         iv = atm_iv(raw["binance_options"], usd, int(now.timestamp() * 1000))
     klines = raw.get("binance_klines") or {}
     out = {}
     for tag in usd:
-        closes = klines.get(tag) if not failed(klines) and tag in verified else None
+        closes = klines.get(tag) if not failed(klines) else None
         if tag in iv:
             out[tag] = {"sigma": sig(iv[tag], 3), "kind": "implied"}
         elif isinstance(closes, list) and len(closes) >= 10 and realised_vol(closes) > 0:
@@ -317,9 +262,7 @@ def _vol(raw: dict, usd: dict, verified: set, now: datetime, fallback: float) ->
 
 
 def reduce(raw: dict, tables: dict, now: datetime) -> dict:
-    binance = _prices(raw)
-    coins, coin_usd, verified = _coins(raw, tables, binance)
-    usd = coin_usd | {k: binance[k] for k in ("BTC", "TAO") if k in binance}  # the market's BTC and TAO always win
+    usd = _prices(raw)
     rentals, unmatched, bad = _rentals(raw, tables)
     sources = {k: ({"ok": False, "error": str(v["error"])[:200]} if failed(v) else {"ok": True}) for k, v in raw.items()}
     sources |= {k: {"ok": False, "error": e} for k, e in bad.items()}
@@ -340,8 +283,7 @@ def reduce(raw: dict, tables: dict, now: datetime) -> dict:
         "ts": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "sources": sources,
         "usd": {k: sig(v) for k, v in usd.items()},
-        "vol": _vol(raw, usd, verified, now, tables["defaults"]["vol_fallback"]),
-        "coins": coins,
+        "vol": _vol(raw, usd, now, tables["defaults"]["vol_fallback"]),
         "nicehash": _nicehash(raw, tables),
         "mrr": _mrr(raw, tables),
         "rentals": rentals,

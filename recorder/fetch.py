@@ -9,7 +9,7 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
-# WhatToMine, Clore, Akash and io.net answer Cloudflare error 1010 to Python's default user agent.
+# Clore, Akash and io.net answer Cloudflare error 1010 to Python's default user agent.
 UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36"
 BINANCE = "https://data-api.binance.vision/api/v3"
 NICEHASH = "https://api2.nicehash.com/main/api/v2"
@@ -110,8 +110,6 @@ def fetch_all(tables: dict, now: datetime, daily: bool) -> tuple[dict, dict]:
     simple = {
         "binance_24h": f"{BINANCE}/ticker/24hr",
         "binance_options": "https://eapi.binance.com/eapi/v1/mark",
-        "wtm_gpu": "https://whattomine.com/coins.json",
-        "wtm_asic": "https://whattomine.com/asic.json",
         "nicehash_stats": f"{NICEHASH}/public/stats/global/current",
         "nicehash_algos": f"{NICEHASH}/mining/algorithms",
         "mrr_algos": "https://www.miningrigrentals.com/api/v2/info/algos",
@@ -129,7 +127,6 @@ def fetch_all(tables: dict, now: datetime, daily: bool) -> tuple[dict, dict]:
     }
     runpod_q = {"query": "{ gpuTypes { id displayName memoryInGb lowestPrice(input:{gpuCount:1})"
                          "{ minimumBidPrice uninterruptablePrice } } }"}
-    books = sorted({a["nh_mkt"] for a in tables["algos"].values() if a.get("nh_mkt")})
     skip = set(tables.get("skip_sources", {}))  # sources whose terms forbid automated collection
     vast_models = {} if "vast" in skip else {gid: g["vast"] for gid, g in tables["gpus"].items() if g.get("vast")}
 
@@ -139,22 +136,15 @@ def fetch_all(tables: dict, now: datetime, daily: bool) -> tuple[dict, dict]:
         jobs = {k: pool.submit(safe, get, u) for k, u in {**simple, **private_urls}.items()}
         if "runpod" not in skip:
             jobs["runpod"] = pool.submit(safe, get, "https://api.runpod.io/graphql", runpod_q)
-        book_jobs = {a: pool.submit(safe, get, f"{NICEHASH}/hashpower/orderBook?algorithm={a}&size=500") for a in books}
         vast_jobs = {gid: pool.submit(safe, vast, name) for gid, name in vast_models.items()}
         hl_jobs = {c: pool.submit(safe, hl_candles, c, now_ms) for c in HL_COINS}
         dvol_jobs = {c: pool.submit(safe, deribit_dvol, c, now_ms) for c in ("BTC", "ETH")}
         res = {k: f.result() for k, f in jobs.items()}
 
-        # Daily closes for realised volatility: every Binance-listed coin the site prices, plus TAO.
-        listed = {t["symbol"][:-4] for t in res["binance_24h"] if t["symbol"].endswith("USDT")} \
-            if isinstance(res["binance_24h"], list) else set()
-        algo_names = {w for a in tables["algos"].values() for w in a["wtm"]}
-        tags = {"TAO", "BTC"} | {c["tag"] for k in ("wtm_gpu", "wtm_asic") if "coins" in res[k]
-                                 for c in res[k]["coins"].values() if c["algorithm"] in algo_names}
-        kl_jobs = {t: pool.submit(safe, klines_closes, t) for t in sorted(tags & listed)}
+        # Daily closes for realised volatility of what the rows are paid in.
+        kl_jobs = {t: pool.submit(safe, klines_closes, t) for t in ("BTC", "TAO")}
 
         public = {k: v for k, v in res.items() if k not in private_urls}
-        public["nicehash_books"] = {a: f.result() for a, f in book_jobs.items()}
         if vast_jobs:
             public["vast"] = {gid: f.result() for gid, f in vast_jobs.items()}
         public["hyperliquid"] = {c: f.result() for c, f in hl_jobs.items()}

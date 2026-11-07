@@ -2,24 +2,18 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
-  avgPriceQuantile, buyRows, fillBook, gpuRows, priceCone, soloChance, sortRows, unitsOverHorizon,
+  avgPriceQuantile, gpuRows, priceCone, sortRows,
   type Bench, type Inputs, type Latest, type Row, type Tables,
 } from "./calc.js";
 
 const tables: Tables = JSON.parse(readFileSync(new URL("./tables.json", import.meta.url), "utf8"));
-const NOW = new Date("2026-11-03T10:00:00Z");
 
 const latest = (): Latest => ({
   ts: "2026-11-03T10:00:00Z",
   sources: {},
-  usd: { BTC: 78000, RVN: 0.015, TAO: 230 },
-  vol: { BTC: { sigma: 0.36, kind: "implied" }, RVN: { sigma: 0.8, kind: "realised" }, TAO: { sigma: 0.65, kind: "realised" } },
-  coins: [
-    { name: "Ravencoin", tag: "RVN", algo: "kawpow", block_time: 60, block_reward: 2500, nethash: 5e12, growth_day: 0, list: "gpu" },
-    { name: "Dead", tag: "RVN", algo: "kawpow", block_time: 60, block_reward: 2500, nethash: 0, growth_day: 0, list: "gpu" },
-    { name: "NoPrice", tag: "NOP", algo: "kawpow", block_time: 60, block_reward: 2500, nethash: 5e12, growth_day: 0, list: "gpu" },
-  ],
-  nicehash: { kawpow: { pay: 5.6e-14, book: [[5e-14, 1e9], [6e-14, 3e9]] } },
+  usd: { BTC: 78000, TAO: 230 },
+  vol: { BTC: { sigma: 0.36, kind: "implied" }, TAO: { sigma: 0.65, kind: "realised" } },
+  nicehash: { kawpow: { pay: 5.6e-14 } },
   mrr: { kawpow: { price: 1.7e-13, rented: 0.05 } },
   rentals: {
     rtx4090: { ionet: { min: 0.25, med: 0.25, n: 600, util: 0.9 }, vast: { min: 0.14, med: 0.3, n: 64, util: null } },
@@ -43,7 +37,7 @@ const latest = (): Latest => ({
   unmatched: {},
 });
 const bench: Bench = { ts: "", gpus: { rtx4090: { kawpow: [65e6, 325] } } };
-const own: Inputs = { mode: "own", gpu: "rtx4090", kwh: 0.1, horizon: 30, rankPct: 25, util: null, poolFee: 0.01, budget: 10 };
+const own: Inputs = { mode: "own", gpu: "rtx4090", kwh: 0.1, horizon: 30, rankPct: 25, util: null };
 
 const finite = (rows: object[]) => rows.every((r) => Object.values(r).every((v) => typeof v !== "number" || Number.isFinite(v)));
 
@@ -52,53 +46,27 @@ test("avgPriceQuantile is centred on spot with no drift", () => {
   assert.ok(avgPriceQuantile(100, 0.8, 30, 1.28) > 100 && avgPriceQuantile(100, 0.8, 30, -1.28) < 100);
 });
 
-test("unitsOverHorizon sums days and applies emission changes", () => {
-  assert.equal(unitsOverHorizon(10, 0, 30, () => 1), 300);
-  assert.equal(unitsOverHorizon(10, 0, 30, (t) => (t >= 10 ? 0.5 : 1)), 200);
-});
-
-test("soloChance", () => assert.ok(Math.abs(soloChance(1) - 0.6321) < 1e-4));
-
-test("fillBook walks the book and caps at its depth", () => {
-  const book: [number, number][] = [[1e-14, 1e6], [2e-14, 3e6]];
-  assert.deepEqual(fillBook(book, 1e-9, 0), { hs: 1e5, priceBtc: 1e-14, exhausted: false });
-  assert.deepEqual(fillBook(book, 4e-8, 0), { hs: 2e6, priceBtc: 2e-14, exhausted: false });
-  assert.deepEqual(fillBook(book, 1, 0), { hs: 3e6, priceBtc: 2e-14, exhausted: true });
-});
-
-test("PoW row matches the spec formula and skips bad coins", () => {
-  const rows = gpuRows(own, latest(), bench, tables, NOW);
-  const pow = rows.filter((r) => r.kind === "pow");
-  assert.deepEqual(pow.map((r) => r.label), ["Ravencoin"]);
-  const perDay = (65e6 / 5e12) * (86400 / 60) * 2500 * 0.99;
-  const net = perDay * 0.015 - (325 / 1000) * 24 * 0.1;
-  assert.ok(Math.abs(pow[0].netDay - net) < 1e-9);
-  assert.ok(Math.abs(pow[0].p50 - net * 30) < 1e-9);
-  assert.ok(pow[0].p10 < pow[0].p50 && pow[0].p50 < pow[0].p90);
-  assert.ok(finite(rows));
-});
-
 test("rows are ranked by p50", () => {
-  const rows = gpuRows(own, latest(), bench, tables, NOW);
+  const rows = gpuRows(own, latest(), bench, tables);
   for (let i = 1; i < rows.length; i++) assert.ok(rows[i - 1].p50 >= rows[i].p50);
 });
 
 test("a GPU with no benchmark still gets Bittensor and rent-out rows", () => {
-  const rows = gpuRows({ ...own, gpu: "h100sxm" }, latest(), bench, tables, NOW);
-  assert.equal(rows.filter((r) => r.kind === "pow" || r.kind === "nicehash").length, 0);
+  const rows = gpuRows({ ...own, gpu: "h100sxm" }, latest(), bench, tables);
+  assert.equal(rows.filter((r) => r.kind === "nicehash" || r.kind === "mrr").length, 0);
   assert.ok(rows.some((r) => r.kind === "tao") && rows.some((r) => r.kind === "rent"));
   assert.ok(finite(rows));
 });
 
 test("rent-out band clamps utilisation at 100%", () => {
-  const r = gpuRows(own, latest(), bench, tables, NOW).find((r) => r.kind === "rent" && r.where === "io.net") as Row;
+  const r = gpuRows(own, latest(), bench, tables).find((r) => r.kind === "rent" && r.where === "io.net") as Row;
   const fee = tables.fees.ionet.fee, idle = 450 * tables.defaults.idle_frac;
   const at = (u: number) => (0.25 * 24 * u * (1 - fee) - ((450 * u + idle * (1 - u)) / 1000) * 24 * 0.1) * 30;
   assert.ok(Math.abs(r.p50 - at(0.9)) < 1e-9 && Math.abs(r.p90 - at(1)) < 1e-9 && Math.abs(r.p10 - at(0.7)) < 1e-9);
 });
 
 test("winner-take-all subnets earn 0 for a new slot and say so", () => {
-  const rows = gpuRows(own, latest(), bench, tables, NOW).filter((r) => r.kind === "tao");
+  const rows = gpuRows(own, latest(), bench, tables).filter((r) => r.kind === "tao");
   const solo = rows.find((r) => r.label.includes("Solo")) as Row;
   assert.ok(solo.netDay < 0 && solo.flags.some((f) => f.includes("winner-take-all")));
   const big = rows.find((r) => r.label.includes("Big")) as Row;
@@ -106,40 +74,30 @@ test("winner-take-all subnets earn 0 for a new slot and say so", () => {
 });
 
 test("the Bittensor headline is weighted by the share of slots that earn", () => {
-  const big = gpuRows(own, latest(), bench, tables, NOW).find((r) => r.label.includes("Big")) as Row;
+  const big = gpuRows(own, latest(), bench, tables).find((r) => r.label.includes("Big")) as Row;
   const taoDay = 0.5 * 2; // half the slots earn; p25 of earners is 2 TAO/day
   const cost = (450 / 1000) * 24 * 0.1;
   assert.ok(Math.abs(big.netDay - (taoDay * 230 - cost - (0.5 * 230) / 30)) < 1e-9);
 });
 
 test("renting mode uses the cheapest market and adds $/TFLOP-hour", () => {
-  const rows = gpuRows({ ...own, mode: "rent" }, latest(), bench, tables, NOW);
-  const pow = rows.find((r) => r.kind === "pow") as Row;
-  assert.equal(pow.where, "rented on Vast at $0.14/h");
-  assert.ok(pow.flags.some((f) => f.includes("restricted")));
-  assert.ok("net $/TFLOP-hour" in pow.detail);
-  assert.ok(!rows.some((r) => r.kind === "rent" || r.kind === "nicehash"));
-});
-
-test("buy rows: margin from the book, capped when exhausted", () => {
-  const rows = buyRows({ ...own, mode: "rent", budget: 10 }, latest(), tables);
-  const nh = rows.find((r) => r.venue === "nicehash") as ReturnType<typeof buyRows>[number];
-  assert.equal(nh.coin, "Ravencoin");
-  const huge = buyRows({ ...own, mode: "rent", budget: 1e9 }, latest(), tables).find((r) => r.venue === "nicehash");
-  assert.ok(huge && huge.flags.some((f) => f.startsWith("book exhausted: only $") && f.endsWith("of $1,000,000,000/day fillable")));
-  assert.ok(finite(rows));
+  const rows = gpuRows({ ...own, mode: "rent" }, latest(), bench, tables);
+  const big = rows.find((r) => r.label.includes("Big")) as Row;
+  assert.ok(big.where.startsWith("rented on Vast at $0.14/h"));
+  assert.ok("net $/TFLOP-hour" in big.detail);
+  assert.ok(Math.abs(big.netDay - (0.5 * 2 * 230 - 0.14 * 24 - (0.5 * 230) / 30)) < 1e-9);
 });
 
 test("rent-out range stays ordered when power costs more than renting earns", () => {
-  const rows = gpuRows({ ...own, kwh: 3 }, latest(), bench, tables, NOW).filter((r) => r.kind === "rent");
+  const rows = gpuRows({ ...own, kwh: 3 }, latest(), bench, tables).filter((r) => r.kind === "rent");
   assert.ok(rows.length > 0);
   for (const r of rows) assert.ok(r.p10 <= r.p50 && r.p50 <= r.p90, `${r.label}: ${r.p10} ${r.p50} ${r.p90}`);
 });
 
 test("each row says how likely it is to earn anything", () => {
-  const rows = gpuRows(own, latest(), bench, tables, NOW);
+  const rows = gpuRows(own, latest(), bench, tables);
   const by = (f: (r: Row) => boolean) => rows.find(f) as Row;
-  assert.equal(by((r) => r.kind === "pow").chance, 1);
+  assert.equal(by((r) => r.kind === "nicehash").chance, 1);
   assert.equal(by((r) => r.label.includes("Big")).chance, 0.5);
   assert.ok(Math.abs(by((r) => r.label.includes("Solo")).chance - 0.004) < 1e-12);
   assert.equal(by((r) => r.where === "io.net").chance, 0.9);
@@ -147,7 +105,7 @@ test("each row says how likely it is to earn anything", () => {
 });
 
 test("sortRows orders by the chosen column, ties broken by p50", () => {
-  const rows = gpuRows(own, latest(), bench, tables, NOW);
+  const rows = gpuRows(own, latest(), bench, tables);
   const byChance = sortRows(rows, "chance");
   for (let i = 1; i < byChance.length; i++) {
     const [a, b] = [byChance[i - 1], byChance[i]];
@@ -158,12 +116,12 @@ test("sortRows orders by the chosen column, ties broken by p50", () => {
 });
 
 test("subnets marked skip in the hardware table (not compute) are left out", () => {
-  const rows = gpuRows(own, latest(), bench, tables, NOW);
+  const rows = gpuRows(own, latest(), bench, tables);
   assert.ok(!rows.some((r) => r.label.startsWith("SN82 ")));
 });
 
 test("Bittensor rows warn about wallet concentration and sell pressure", () => {
-  const rows = gpuRows(own, latest(), bench, tables, NOW);
+  const rows = gpuRows(own, latest(), bench, tables);
   const big = rows.find((r) => r.label.includes("Big")) as Row;
   assert.ok(big.flags.includes("95% of rewards go to 3 wallets"));
   assert.ok(big.flags.includes("miners sell 4.7% of the pool's TAO a day: alpha price likely to fall"));
@@ -172,7 +130,7 @@ test("Bittensor rows warn about wallet concentration and sell pressure", () => {
 });
 
 test("Bittensor chance of earning comes from newcomers when there are enough of them", () => {
-  const rows = gpuRows(own, latest(), bench, tables, NOW);
+  const rows = gpuRows(own, latest(), bench, tables);
   const healthy = rows.find((r) => r.label.includes("Healthy")) as Row;
   assert.equal(healthy.chance, 0.1); // 2 of 20 slots registered in the last 14 days earn
   const cost = (450 / 1000) * 24 * 0.1;
@@ -182,12 +140,12 @@ test("Bittensor chance of earning comes from newcomers when there are enough of 
 });
 
 test("rows say whether they use the GPU; subnets limited to listed cards skip others", () => {
-  const rows = gpuRows(own, latest(), bench, tables, NOW);
+  const rows = gpuRows(own, latest(), bench, tables);
   assert.equal((rows.find((r) => r.label.includes("CpuOnly")) as Row).usesGpu, false);
   assert.equal((rows.find((r) => r.label.includes("Big")) as Row).usesGpu, null);
-  assert.equal((rows.find((r) => r.kind === "pow") as Row).usesGpu, true);
+  assert.equal((rows.find((r) => r.kind === "nicehash") as Row).usesGpu, true);
   assert.ok(rows.some((r) => r.label.includes("GpuRental")));
-  const small = gpuRows({ ...own, gpu: "rtx3060" }, latest(), bench, tables, NOW);
+  const small = gpuRows({ ...own, gpu: "rtx3060" }, latest(), bench, tables);
   assert.ok(!small.some((r) => r.label.includes("GpuRental")));
 });
 
@@ -202,50 +160,16 @@ test("priceCone fans out from today's price with no drift", () => {
 });
 
 test("rows that are paid in a coin carry its price and volatility for the chart", () => {
-  const rows = gpuRows(own, latest(), bench, tables, NOW);
-  assert.deepEqual((rows.find((r) => r.kind === "pow") as Row).price, { tag: "RVN", spot: 0.015, sigma: 0.8, kind: "realised" });
+  const rows = gpuRows(own, latest(), bench, tables);
+  assert.deepEqual((rows.find((r) => r.kind === "nicehash") as Row).price, { tag: "BTC", spot: 78000, sigma: 0.36, kind: "implied" });
   assert.equal((rows.find((r) => r.kind === "tao") as Row).price?.tag, "TAO");
   assert.equal((rows.find((r) => r.kind === "rent") as Row).price, undefined);
 });
 
-test("buy rows never price hashrate below what NiceHash pays sellers, and flag huge margins", () => {
-  const L = latest();
-  L.nicehash.kawpow = { pay: 5.6e-14, book: [[1e-16, 4.8e3], [5.8e-14, 1e9], [6e-14, 3e9]] }; // a stray order far below market
-  const nh = buyRows({ ...own, mode: "rent", budget: 10 }, L, tables).find((r) => r.venue === "nicehash") as ReturnType<typeof buyRows>[number];
-  const fill = fillBook([[5.6e-14, 4.8e3], [5.8e-14, 1e9], [6e-14, 3e9]], 10 / 78000, 0.03);
-  assert.ok(Math.abs(nh.spend - fill.hs * fill.priceBtc * 1.03 * 78000) < 1e-9);
-  assert.ok(Math.abs(nh.spend - 10) < 1e-6); // the whole budget fills at a real price
-  const cheap = latest();
-  cheap.nicehash.kawpow = { pay: 1e-16, book: [[1e-16, 1e12]] };
-  const wild = buyRows({ ...own, mode: "rent", budget: 10 }, cheap, tables).find((r) => r.venue === "nicehash");
-  assert.ok(wild && wild.marginPct > 1 && wild.flags.some((f) => f.startsWith("margin over +100%")));
-});
-
-test("buy rows that can't fill half the budget sort below ones that can", () => {
-  const L = latest();
-  L.coins.push({ name: "Thin", tag: "BTC", algo: "nexapow", block_time: 60, block_reward: 1, nethash: 1e6, growth_day: 0, list: "gpu" });
-  L.nicehash.nexapow = { pay: 1e-16, book: [[1e-16, 10]] }; // a nearly empty market with a huge margin
-  const rows = buyRows({ ...own, mode: "rent", budget: 10 }, L, tables);
-  const thin = rows.findIndex((r) => r.algo === "nexapow"), full = rows.findIndex((r) => r.algo === "kawpow" && r.venue === "nicehash");
-  assert.ok(rows[thin].marginPct > rows[full].marginPct && thin > full);
-});
-
-test("buy revenue is capped at what the coin's market can absorb, and thin or lagging coins are flagged", () => {
-  const L = latest();
-  L.coins[0] = { ...L.coins[0], vol_btc: 0.0016, lagging: true }; // Ravencoin trading only ~$125 a day
-  const nh = buyRows({ ...own, mode: "rent", budget: 10 }, L, tables).find((r) => r.venue === "nicehash" && r.algo === "kawpow") as ReturnType<typeof buyRows>[number];
-  const cap = tables.defaults.max_volume_share * 0.0016 * 78000;
-  assert.ok(Math.abs(nh.revenue - cap) < 1e-9);
-  assert.ok(nh.flags.some((f) => f.startsWith("only $125/day of Ravencoin trades")));
-  assert.ok(nh.flags.includes("WhatToMine marks this coin's data as lagging"));
-  const pow = gpuRows(own, L, bench, tables, NOW).find((r) => r.kind === "pow") as Row;
-  assert.ok(pow.flags.includes("thin market: $125/day traded") && pow.flags.includes("WhatToMine marks this coin's data as lagging"));
-});
-
 test("Bittensor rows are valued in the subnet's alpha, with alpha's own volatility and 30-day move", () => {
   const alpha = { ts: "", subnets: { "199": { vol: 1.0, change30: -0.5 }, "198": { vol: 0.5, change30: 2 } } };
-  const plain = gpuRows(own, latest(), bench, tables, NOW).find((r) => r.label.includes("Big")) as Row;
-  const rows = gpuRows(own, latest(), bench, tables, NOW, alpha);
+  const plain = gpuRows(own, latest(), bench, tables).find((r) => r.label.includes("Big")) as Row;
+  const rows = gpuRows(own, latest(), bench, tables, alpha);
   const big = rows.find((r) => r.label.includes("Big")) as Row;
   assert.equal(big.price?.tag, "SN199 alpha");
   assert.ok(Math.abs((big.price?.spot ?? 0) - 0.02 * 230) < 1e-12);
@@ -258,7 +182,7 @@ test("Bittensor rows are valued in the subnet's alpha, with alpha's own volatili
 
 test("subnets that don't use a GPU cost a small CPU server, not GPU power or GPU rent", () => {
   for (const mode of ["own", "rent"] as const) {
-    const cpu = gpuRows({ ...own, mode }, latest(), bench, tables, NOW).find((r) => r.label.includes("CpuOnly")) as Row;
+    const cpu = gpuRows({ ...own, mode }, latest(), bench, tables).find((r) => r.label.includes("CpuOnly")) as Row;
     const taoDay = 2 * 0.5; // p25 of earners × share of slots earning (no newcomers to measure)
     const expected = taoDay * 230 - tables.defaults.cpu_server_month / 30 - (0.5 * 230) / 30;
     assert.ok(Math.abs(cpu.netDay - expected) < 1e-9, `${mode}: ${cpu.netDay} vs ${expected}`);
@@ -267,8 +191,15 @@ test("subnets that don't use a GPU cost a small CPU server, not GPU power or GPU
   }
 });
 
+test("no per-coin mining rows, even from an older latest.json that still lists coins", () => {
+  const old = { ...latest(), coins: [{ name: "Ravencoin", tag: "RVN", algo: "kawpow", block_time: 60, block_reward: 2500, nethash: 5e12, growth_day: 0 }] } as Latest;
+  const kinds = (mode: Inputs["mode"]) => [...new Set(gpuRows({ ...own, mode }, old, bench, tables).map((r) => r.kind))].sort();
+  assert.deepEqual(kinds("own"), ["mrr", "nicehash", "rent", "tao"]);
+  assert.deepEqual(kinds("rent"), ["tao"]);
+});
+
 test("subnets nobody joined recently are flagged: no evidence how newcomers do", () => {
-  const rows = gpuRows(own, latest(), bench, tables, NOW);
+  const rows = gpuRows(own, latest(), bench, tables);
   assert.ok((rows.find((r) => r.label.includes("CpuOnly")) as Row).flags.includes("nobody joined in the last 14 days: no data on how newcomers do"));
   assert.ok(!(rows.find((r) => r.label.includes("Healthy")) as Row).flags.some((f) => f.startsWith("nobody joined")));
 });

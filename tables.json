@@ -88,32 +88,20 @@
     "v100":           {"name": "V100",            "vram": 16,  "fp32": 15.7,  "tdp": 300,  "nicehash": null,                       "vast": "Tesla V100",      "aliases": ["v100sxm216gb", "v100sxm232gb", "v100pcie16gb", "v100tensorcoregpu", "v10016sxm2", "v10032pcie", "v100"]}
   },
   "algos": {
-    "kawpow":     {"wtm": ["KawPow"],            "nh_dev": "KAWPOW",          "nh_mkt": "KAWPOW",          "mrr": "kawpow"},
-    "autolykos":  {"wtm": ["Autolykos"],         "nh_dev": "AUTOLYKOS",       "nh_mkt": "AUTOLYKOS",       "mrr": "autolykosv2"},
-    "etchash":    {"wtm": ["Etchash"],           "nh_dev": "ETCHASH",         "nh_mkt": "ETCHASH",         "mrr": "etchash"},
-    "ethash":     {"wtm": ["Ethash"],            "nh_dev": "DAGGERHASHIMOTO", "nh_mkt": "DAGGERHASHIMOTO", "mrr": null},
-    "zhash":      {"wtm": ["Zhash"],             "nh_dev": "ZHASH",           "nh_mkt": "ZHASH",           "mrr": "zhash"},
-    "beamv3":     {"wtm": ["BeamHashIII"],       "nh_dev": "BEAMV3",          "nh_mkt": "BEAMV3",          "mrr": null},
-    "octopus":    {"wtm": ["Octopus"],           "nh_dev": "OCTOPUS",         "nh_mkt": "OCTOPUS",         "mrr": "octopus"},
-    "nexapow":    {"wtm": ["NexaPow"],           "nh_dev": "NEXAPOW",         "nh_mkt": "NEXAPOW",         "mrr": "nexapow"},
-    "fishhash":   {"wtm": ["FishHash"],          "nh_dev": null,        "nh_mkt": "FISHHASH",        "mrr": "fishhash"},
-    "cuckoocycle":{"wtm": ["CuckooCycle"],       "nh_dev": "CUCKOOCYCLE",     "nh_mkt": null,              "mrr": null},
-    "kheavyhash": {"wtm": ["kHeavyHash"],        "nh_dev": "KHEAVYHASH",      "nh_mkt": "KHEAVYHASH",      "mrr": "kheavyhash"},
-    "blake3":     {"wtm": ["Blake3"],            "nh_dev": "ALEPHIUM",        "nh_mkt": "ALEPHIUM",        "mrr": "blake3aleph"},
-    "sha256":     {"wtm": ["SHA-256"],           "nh_dev": null,              "nh_mkt": "SHA256",          "mrr": "sha256"},
-    "scrypt":     {"wtm": ["Scrypt"],            "nh_dev": null,              "nh_mkt": "SCRYPT",          "mrr": "scrypt"},
-    "x11":        {"wtm": ["X11"],               "nh_dev": null,              "nh_mkt": "X11",             "mrr": "x11"},
-    "equihash":   {"wtm": ["Equihash"],          "nh_dev": null,              "nh_mkt": "EQUIHASH",        "mrr": "equihash"},
-    "eaglesong":  {"wtm": ["Eaglesong"],         "nh_dev": null,              "nh_mkt": "EAGLESONG",       "mrr": "eaglesong"},
-    "randomx":    {"wtm": ["RandomX"],           "nh_dev": null,              "nh_mkt": "RANDOMXMONERO",   "mrr": "randomx"},
-    "firopow":    {"wtm": ["FiroPow"],           "nh_dev": null,              "nh_mkt": null,              "mrr": "firopow"},
-    "evrprogpow": {"wtm": ["EvrProgPow"],        "nh_dev": null,              "nh_mkt": null,              "mrr": "evrprogpow"},
-    "meowpow":    {"wtm": ["MeowPow"],           "nh_dev": null,              "nh_mkt": null,              "mrr": "meowpow"},
-    "progpowz":   {"wtm": ["ProgPowZ"],          "nh_dev": null,              "nh_mkt": null,              "mrr": "progpowz"},
-    "verthash":   {"wtm": ["Verthash"],          "nh_dev": null,              "nh_mkt": null,              "mrr": "verthash"}
+    "kawpow":     {"nh_dev": "KAWPOW",          "nh_mkt": "KAWPOW",          "mrr": "kawpow"},
+    "autolykos":  {"nh_dev": "AUTOLYKOS",       "nh_mkt": "AUTOLYKOS",       "mrr": "autolykosv2"},
+    "etchash":    {"nh_dev": "ETCHASH",         "nh_mkt": "ETCHASH",         "mrr": "etchash"},
+    "ethash":     {"nh_dev": "DAGGERHASHIMOTO", "nh_mkt": "DAGGERHASHIMOTO", "mrr": null},
+    "zhash":      {"nh_dev": "ZHASH",           "nh_mkt": "ZHASH",           "mrr": "zhash"},
+    "beamv3":     {"nh_dev": "BEAMV3",          "nh_mkt": "BEAMV3",          "mrr": null},
+    "octopus":    {"nh_dev": "OCTOPUS",         "nh_mkt": "OCTOPUS",         "mrr": "octopus"},
+    "nexapow":    {"nh_dev": "NEXAPOW",         "nh_mkt": "NEXAPOW",         "mrr": "nexapow"},
+    "cuckoocycle":{"nh_dev": "CUCKOOCYCLE",     "nh_mkt": null,              "mrr": null},
+    "kheavyhash": {"nh_dev": "KHEAVYHASH",      "nh_mkt": "KHEAVYHASH",      "mrr": "kheavyhash"},
+    "blake3":     {"nh_dev": "ALEPHIUM",        "nh_mkt": "ALEPHIUM",        "mrr": "blake3aleph"}
   },
   "publish_raw": ["binance_24h", "binance_options", "binance_klines", "bittensor", "alpha_history", "hyperliquid",
-                  "nicehash_stats", "nicehash_algos", "nicehash_books", "nicehash_devices"],
+                  "nicehash_stats", "nicehash_algos", "nicehash_devices"],
   "publish_raw_note": "Sources whose raw hourly data may go in the public archive; everything else goes to the private archive. See 'Sources and their terms' in the README (checked 2026-11-04).",
   "skip_sources": {
     "vast": "Vast's Terms of Use (2026-09-01) forbid automated retrieval and using its data for a pricing-comparison service without a written agreement.",
@@ -128,21 +116,6 @@
     "runpod":   {"fee": 0.20,   "confirmed": false, "src": null, "note": "Unknown; 20% assumed to stay conservative."},
     "nicehash": {"fee": 0.02,   "confirmed": false, "src": "https://coinbureau.com/review/nicehash", "note": "Seller payout fee to a NiceHash wallet."},
     "mrr":      {"fee": 0.03,   "confirmed": false, "src": "https://medium.com/@minerstat/minerstat-mining-tutorial-36-mining-rig-rentals-ca4c3f47247c", "note": "Sources disagree on who pays the 3%."}
-  },
-  "terms": {
-    "vast": "restricted", "clore": "allowed", "lium": "unknown", "runpod": "unknown", "akash": "unknown", "ionet": "unknown"
-  },
-  "terms_note": {
-    "vast": "Vast bans mining on credit bought by card.",
-    "clore": "Clore is built for mining.",
-    "runpod": "RunPod's terms don't mention mining."
-  },
-  "halvings": {
-    "_verify": true,
-    "LTC": [["2027-07-15", 0.5]],
-    "BTC": [["2028-04-15", 0.5]],
-    "BCH": [["2028-04-01", 0.5]],
-    "KAS": {"decay_per_year": 0.5}
   },
   "subnet_hw": {
     "_verify": true,
@@ -224,7 +197,6 @@
     "82": {"gpu": false, "skip": true, "note": "Noah: no miner to run; rewards follow capital contributed to its 'Ark' (staking-like, out of scope). github.com/Vora-Inc/NOAH, checked 2026-11-05"}
   },
   "defaults": {
-    "pool_fee": 0.01, "util": 0.5, "util_band": 0.2, "rank_pct": 25, "buy_fee_nicehash": 0.03,
-    "budget": 10, "vol_fallback": 1.2, "growth_cap_day": 0.002, "idle_frac": 0.1, "kwh": 0.15, "max_volume_share": 0.05, "thin_market_usd": 1000, "cpu_server_month": 15
+    "util": 0.5, "util_band": 0.2, "rank_pct": 25, "vol_fallback": 1.2, "idle_frac": 0.1, "kwh": 0.15, "cpu_server_month": 15
   }
 }

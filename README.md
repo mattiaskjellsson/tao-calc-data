@@ -4,10 +4,11 @@ A free, non-commercial calculator that answers one question: **what's the most p
 
 The options are:
 
-- mining a proof-of-work coin
 - running a Bittensor subnet miner
 - selling the hashrate (NiceHash, MiningRigRentals)
-- renting the card out (Vast, Clore, Lium, RunPod, Akash, io.net)
+- renting the card out (Clore, Lium, Akash, io.net)
+
+Mining a specific coin yourself isn't an option any more (removed 2026-11-07). Coin network stats came from WhatToMine, and neither it nor minerstat, the alternative, allows a site like this without written permission. See "Sources and their terms".
 
 Every row shows:
 
@@ -26,7 +27,7 @@ Not financial advice. Earnings can be zero or negative.
 |---|---|---|
 | `recorder/` | Python, run hourly by a Railway cron. It fetches every source, archives the raw responses and writes `site-data/`. | Railway |
 | `site/` | Static TypeScript page. All the math runs in the browser (`site/src/calc.ts`), from `site-data/latest.json` read off this repo's raw URL. | GitHub Pages / Cloudflare Pages |
-| `tables.json` | Hand-kept tables: GPU specs and name aliases, algorithm names, platform fees (with sources), hosts' mining terms, halvings, subnet hardware needs, defaults. | both |
+| `tables.json` | Hand-kept tables: GPU specs and name aliases, algorithm names, platform fees (with sources), subnet hardware needs, defaults. | both |
 
 The design is in [`docs/superpowers/specs/2026-10-31-gpu-calculator-design.md`](docs/superpowers/specs/2026-10-31-gpu-calculator-design.md).
 
@@ -36,7 +37,7 @@ The design is in [`docs/superpowers/specs/2026-10-31-gpu-calculator-design.md`](
 
 | File | Updated | Contents |
 |---|---|---|
-| `latest.json` | hourly | What the site needs now. Prices (`usd`), annualised volatility (`vol`: implied from Binance options, else 30-day realised, else assumed), mineable coins (`coins`), NiceHash prices and compressed order books (`nicehash`), MiningRigRentals prices (`mrr`), GPU rental prices and utilisation per market (`rentals`, $/GPU-hour), per-subnet Bittensor earning percentiles in TAO/day (`subnets`), and per-source status (`sources`). |
+| `latest.json` | hourly | What the site needs now. BTC and TAO prices (`usd`), their annualised volatility (`vol`: implied from Binance options, else 30-day realised, else assumed), what NiceHash pays per H/s (`nicehash`), MiningRigRentals prices (`mrr`), GPU rental prices and utilisation per market (`rentals`, $/GPU-hour), per-subnet Bittensor earning percentiles in TAO/day (`subnets`), and per-source status (`sources`). |
 | `daily/YYYY-MM-DD.json` | once a day | The first `latest.json` of each UTC day, for history. |
 | `benchmarks.json` | when it changes | Hashrate (H/s) and power (W) per GPU and algorithm, from NiceHash's device table. |
 
@@ -60,11 +61,11 @@ The design is in [`docs/superpowers/specs/2026-10-31-gpu-calculator-design.md`](
 |---|---|---|
 | Binance (tickers, options marks, daily closes) | yes | [Vision Dataset Terms](https://data.binance.vision/Binance_Vision-Terms_of_Use.pdf): CC BY-NC-SA 4.0, non-commercial. |
 | Bittensor (Finney chain) | yes | Public blockchain data. |
-| NiceHash (prices, order books, device benchmarks) | yes | [Terms](https://www.nicehash.com/terms): no clause restricts public market data. The redistribution clause covers their software. |
+| NiceHash (paying prices, device benchmarks) | yes | [Terms](https://www.nicehash.com/terms): no clause restricts public market data. The redistribution clause covers their software. |
 | Hyperliquid (5-minute candles) | yes | On-chain market data. Their docs say "You can use the API to record additional historical data sets yourself" ([historical data](https://hyperliquid.gitbook.io/hyperliquid-docs/historical-data)). |
-| WhatToMine (coin network stats) | no | [Terms](https://whattomine.com/policy-terms): the API may not be used "for any application that replicates or attempts to replace the essential user experience of whattomine.com". **Open question, see below.** |
+| WhatToMine, minerstat (coin network stats) | **not collected** | [WhatToMine's terms](https://whattomine.com/policy-terms): the API may not be used "for any application that replicates or attempts to replace the essential user experience of whattomine.com". [minerstat's API terms](https://minerstat.com/developers/terms) allow caching for at most 24 hours. They forbid "redistributing the data itself, as an API, dataset, feed or file" and "building a substantially similar site". That's why the per-coin mining rows were removed on 2026-11-07. To bring them back, get written permission from one of them. |
 | MiningRigRentals | no | Their [API help](https://www.miningrigrentals.com/helpcenter/API) allows "legitimate integrations, tools, analysis", but the [ToS](https://www.miningrigrentals.com/tos) needs written permission to "reproduce, distribute". |
-| CoinGecko (BTC/TAO fallback) | no | [API terms](https://www.coingecko.com/en/api_terms): no redistribution without a paid licence. |
+| CoinGecko (BTC/TAO fallback) | no | [API terms](https://www.coingecko.com/en/api_terms): no redistribution without a paid licence, and the site must show "Powered by CoinGecko" (it's in the footer). |
 | Clore, Lium | no | [Clore terms](https://clore.ai/terms-and-conditions) and [Lium terms](https://lium.io/terms) grant only a limited licence and say nothing about data reuse. Listings include host identifiers. |
 | Akash, io.net | no | Terms pages not found. Private until checked. |
 | Vast | **not collected** | [Terms of Use](https://vast.ai/terms) (2026-09-01) forbid automated retrieval, and any "index, benchmark, pricing-comparison service" without a written agreement. Listed in `skip_sources`. |
@@ -82,15 +83,14 @@ To start collecting Vast or RunPod again, get their written permission and remov
 
 ## The math, briefly
 
-- **PoW:** `coins/day = hashrate / network hashrate × 86400 / block time × block reward × (1 − pool fee)`.
+- **Selling hashrate:** `hashrate × NiceHash's paying price × (1 − fee)` in BTC/day. For MiningRigRentals it's `hashrate × suggested price × share of rigs rented × (1 − fee)`.
 - **Bittensor:** each non-owner slot's TAO/day is `incentive / Σ incentive × alpha emission × 7200 × 0.41 × alpha price`. This is the same formula as the tao project's `brain/earnings.py`.
   - The headline is your rank among earners (default p25) × the chance of earning. That chance is what newcomers actually got: the share of slots registered in the last 14 days that earn. With fewer than 5 newcomers, it's the share of all slots earning.
   - Subnets with fewer than 10 earners count as winner-take-all, worth 0 for a new slot.
   - Rows are flagged when 3 wallets take over 75% of rewards, or when miners' daily payout is over 1% of the pool's TAO reserve.
   - `subnet_hw` in `tables.json` records what each audited subnet's miner actually runs. Subnets that don't use a GPU are hidden by default, and subnets marked `skip` (staking-like) never appear.
-- **Buying hashrate:** the NiceHash order book is walked to fill your budget, never below NiceHash's own paying price. Margins over +100% are flagged as suspect.
 - **Rent-out:** `median price × 24 × utilisation × (1 − platform fee)`, minus power. The range is utilisation ± 20 percentage points.
-- **Range:** lognormal prices with no drift, using the average-price quantile `S·exp(z·σ·√(T/3))`. Network growth comes from the 24 h difficulty trend, capped at ±0.2%/day, and halvings from `tables.json`.
+- **Range:** lognormal prices with no drift, using the average-price quantile `S·exp(z·σ·√(T/3))`.
 
 ## Running it
 

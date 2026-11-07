@@ -3,17 +3,11 @@
 export type Gpu = { name: string; vram: number; fp32: number; tdp: number; nicehash: string | null; vast: string | null; aliases: string[] };
 export type Tables = {
   gpus: Record<string, Gpu>;
-  algos: Record<string, { wtm: string[]; nh_dev: string | null; nh_mkt: string | null; mrr: string | null }>;
+  algos: Record<string, { nh_dev: string | null; nh_mkt: string | null; mrr: string | null }>;
   fees: Record<string, { fee: number; confirmed: boolean; src: string | null; note: string }>;
-  terms: Record<string, "allowed" | "restricted" | "banned" | "unknown">;
-  terms_note: Record<string, string>;
-  halvings: Record<string, [string, number][] | { decay_per_year: number } | boolean>;
   subnet_hw: Record<string, { gpu: boolean; vram?: number; gpus?: string[]; note?: string; skip?: boolean } | boolean>;
-  defaults: { pool_fee: number; util: number; util_band: number; rank_pct: number; buy_fee_nicehash: number; budget: number;
-    vol_fallback: number; growth_cap_day: number; idle_frac: number; kwh: number; max_volume_share: number; thin_market_usd: number; cpu_server_month: number };
+  defaults: { util: number; util_band: number; rank_pct: number; vol_fallback: number; idle_frac: number; kwh: number; cpu_server_month: number };
 };
-export type Coin = { name: string; tag: string; algo: string; block_time: number; block_reward: number; nethash: number; growth_day: number; list: string;
-  vol_btc?: number; lagging?: boolean }; // vol_btc: 24 h trading volume in BTC (WhatToMine)
 export type Subnet = { netuid: number; name: string; price_tao: number; pool_tao_day: number; burn_tao: number; immunity_blocks: number;
   n: number; earners: number; zero_share: number; p: { p10: number; p25: number; p50: number; p75: number; p90: number; top: number };
   top3_share?: number; sell_pressure?: number; tao_in?: number;
@@ -24,39 +18,28 @@ export type Latest = {
   sources: Record<string, { ok: boolean; error?: string }>;
   usd: Record<string, number>;
   vol: Record<string, { sigma: number; kind: "implied" | "realised" | "assumed" }>;
-  coins: Coin[];
-  nicehash: Record<string, { pay: number; book: [number, number][] }>;
+  nicehash: Record<string, { pay: number }>;
   mrr: Record<string, { price: number; rented: number }>;
   rentals: Record<string, Record<string, Market>>;
   subnets: Subnet[];
   unmatched: Record<string, string[]>;
 };
 export type Bench = { ts: string; gpus: Record<string, Record<string, [number, number]>> };
-export type Inputs = { mode: "own" | "rent"; gpu: string; kwh: number; horizon: number; rankPct: number; util: number | null; poolFee: number; budget: number };
+export type Inputs = { mode: "own" | "rent"; gpu: string; kwh: number; horizon: number; rankPct: number; util: number | null };
 export type Row = {
-  kind: "pow" | "nicehash" | "mrr" | "tao" | "rent"; label: string; where: string;
+  kind: "nicehash" | "mrr" | "tao" | "rent"; label: string; where: string;
   netDay: number; p10: number; p50: number; p90: number;
-  chance: number; // how likely the option earns anything: pool mining 1, Bittensor newcomers earning, rent-out utilisation
+  chance: number; // how likely the option earns anything: NiceHash 1, MRR rigs rented, Bittensor newcomers earning, rent-out utilisation
   usesGpu: boolean | null; // null: a subnet whose hardware needs are unknown
   price?: { tag: string; spot: number; sigma: number; kind: "implied" | "realised" | "assumed" }; // what the earnings are paid in
   breakEvenPrice?: { value: number; pctFromNow: number; unit: string }; breakEvenKwh?: number;
   flags: string[]; detail: Record<string, string | number>;
 };
-export type BuyRow = { algo: string; venue: "nicehash" | "mrr"; coin: string; marginPct: number; spend: number; revenue: number; flags: string[]; detail: Record<string, string | number> };
-
 export const Z90 = 1.2815515655;
 export const MARKET_NAMES: Record<string, string> = { vast: "Vast", clore: "Clore", lium: "Lium", runpod: "RunPod", akash: "Akash", ionet: "io.net" };
 
 // ponytail: geometric-average approximation for the average price over the horizon; Monte Carlo if it's ever off.
 export const avgPriceQuantile = (S: number, sigmaYr: number, days: number, z: number) => S * Math.exp(z * sigmaYr * Math.sqrt(days / 365 / 3));
-
-export function unitsOverHorizon(perDay: number, growthDay: number, days: number, emission: (t: number) => number = () => 1): number {
-  let sum = 0;
-  for (let t = 0; t < days; t++) sum += perDay * Math.exp(-growthDay * t) * emission(t);
-  return sum;
-}
-
-export const soloChance = (lambda: number) => 1 - Math.exp(-lambda);
 
 /** Where the price could be on each day of the horizon: lognormal, no drift, p10/p50/p90. */
 export function priceCone(S: number, sigmaYr: number, days: number) {
@@ -64,27 +47,6 @@ export function priceCone(S: number, sigmaYr: number, days: number) {
     const w = Z90 * sigmaYr * Math.sqrt(day / 365);
     return { day, p10: S * Math.exp(-w), p50: S, p90: S * Math.exp(w) };
   });
-}
-
-/** Largest H/s a buyer gets for budgetBtcDay: to take hs you must outbid every order below cum_hs ≥ hs. */
-export function fillBook(book: [number, number][], budgetBtcDay: number, fee: number) {
-  let best = { hs: 0, priceBtc: 0, exhausted: false };
-  let prev = 0;
-  for (const [price, cum] of book) {
-    const affordable = budgetBtcDay / (price * (1 + fee));
-    const hs = Math.min(cum, affordable);
-    if (hs > prev && hs > best.hs) best = { hs, priceBtc: price, exhausted: affordable > cum && cum === book[book.length - 1][1] };
-    prev = cum;
-  }
-  return best;
-}
-
-function emissionFor(tag: string, tables: Tables, now: Date): (t: number) => number {
-  const h = tables.halvings[tag];
-  if (!h || typeof h === "boolean") return () => 1;
-  if (!Array.isArray(h)) return (t) => Math.pow(h.decay_per_year, t / 365);
-  const steps = h.map(([date, f]) => [(Date.parse(date) - now.getTime()) / 86_400_000, f] as const);
-  return (t) => steps.reduce((acc, [day, f]) => (t >= day ? acc * f : acc), 1);
 }
 
 function interpRank(p: Subnet["p"], pct: number): number {
@@ -97,12 +59,10 @@ function interpRank(p: Subnet["p"], pct: number): number {
   return p.top;
 }
 
-export function rentCost(gpu: string, latest: Latest, tables: Tables): { usdHour: number; market: string; terms: string } | null {
-  let best: { usdHour: number; market: string; terms: string } | null = null;
-  for (const [m, q] of Object.entries(latest.rentals[gpu] ?? {})) {
-    const terms = tables.terms[m] ?? "unknown";
-    if (terms !== "banned" && q.min > 0 && (!best || q.min < best.usdHour)) best = { usdHour: q.min, market: m, terms };
-  }
+export function rentCost(gpu: string, latest: Latest): { usdHour: number; market: string } | null {
+  let best: { usdHour: number; market: string } | null = null;
+  for (const [m, q] of Object.entries(latest.rentals[gpu] ?? {}))
+    if (q.min > 0 && (!best || q.min < best.usdHour)) best = { usdHour: q.min, market: m };
   return best;
 }
 
@@ -112,7 +72,7 @@ const pct = (x: number) => `${Math.round(x * 100)}%`;
 type Earning = { units: number; tag: string; costDay: number; fixedCost: number; perDayUnits: number;
   spot?: number; vol?: { sigma: number; kind: "implied" | "realised" | "assumed" } }; // spot/vol: for tokens not in latest.usd
 
-/** Turn units earned (coins, BTC or TAO) into net $ quantiles over the horizon. */
+/** Turn units earned (BTC, TAO or alpha) into net $ quantiles over the horizon. */
 function settle(inp: Inputs, latest: Latest, tables: Tables, e: Earning) {
   const S = e.spot ?? latest.usd[e.tag];
   const vol = e.vol ?? latest.vol[e.tag] ?? { sigma: tables.defaults.vol_fallback, kind: "assumed" as const };
@@ -130,42 +90,19 @@ function settle(inp: Inputs, latest: Latest, tables: Tables, e: Earning) {
 
 export type Alpha = { ts: string; subnets: Record<string, { vol: number; change30: number }> };
 
-export function gpuRows(inp: Inputs, latest: Latest, bench: Bench, tables: Tables, now: Date, alpha?: Alpha): Row[] {
+export function gpuRows(inp: Inputs, latest: Latest, bench: Bench, tables: Tables, alpha?: Alpha): Row[] {
   const gpu = tables.gpus[inp.gpu];
   if (!gpu) return [];
   const d = tables.defaults, H = inp.horizon, rows: Row[] = [];
-  const rent = inp.mode === "rent" ? rentCost(inp.gpu, latest, tables) : null;
+  const rent = inp.mode === "rent" ? rentCost(inp.gpu, latest) : null;
   if (inp.mode === "rent" && !rent) return [];
   const powerCost = (watts: number) => (inp.mode === "own" ? (watts / 1000) * 24 * inp.kwh : (rent as { usdHour: number }).usdHour * 24);
   const where = (own: string) => (rent ? `rented on ${MARKET_NAMES[rent.market]} at $${money(rent.usdHour)}/h` : own);
-  const rentFlags = () => (rent && rent.terms !== "allowed" ? [`${MARKET_NAMES[rent.market]}: mining ${rent.terms}${tables.terms_note[rent.market] ? ` (${tables.terms_note[rent.market]})` : ""}`] : []);
   const kwhBreakEven = (revenueH: number, fixed: number, watts: number) =>
     inp.mode === "own" && watts > 0 ? Math.max(0, (revenueH - fixed) / ((watts / 1000) * 24 * H)) : undefined;
-  const volFlag = (v: { kind: string }) => (v.kind === "assumed" ? ["price volatility assumed (no market data)"] : []);
 
-  // Proportional: PoW coins.
-  for (const [algo, [hs, watts]] of Object.entries(bench.gpus[inp.gpu] ?? {})) {
-    for (const c of latest.coins) {
-      const S = latest.usd[c.tag];
-      if (c.algo !== algo || !(c.nethash > 0 && c.block_time > 0 && c.block_reward > 0 && S > 0)) continue;
-      const blocksDay = 86400 / c.block_time, share = hs / c.nethash;
-      const perDay = share * blocksDay * c.block_reward * (1 - inp.poolFee);
-      const units = unitsOverHorizon(perDay, c.growth_day, H, emissionFor(c.tag, tables, now));
-      const s = settle(inp, latest, tables, { units, tag: c.tag, costDay: powerCost(watts), fixedCost: 0, perDayUnits: perDay });
-      rows.push({
-        kind: "pow", label: c.name, where: where(`mine ${algo} in a pool`), netDay: s.netDay, p10: s.p10, p50: s.p50, p90: s.p90, chance: 1, usesGpu: true, price: s.price,
-        breakEvenPrice: s.breakEvenPrice, breakEvenKwh: kwhBreakEven(units * S, 0, watts),
-        flags: [...volFlag(s.vol), ...coinFlags(c, latest, tables), ...rentFlags()],
-        detail: {
-          hashrate: `${(hs / 1e6).toPrecision(4)} MH/s at ${watts} W`, "coins/day": perDay.toPrecision(4), price: `$${S.toPrecision(4)}`,
-          volatility: `${pct(s.vol.sigma)}/yr (${s.vol.kind})`, "network growth": `${(c.growth_day * 100).toFixed(2)}%/day (24 h trend)`,
-          "pool fee": pct(inp.poolFee), "solo instead": `${pct(soloChance(share * blocksDay * H))} chance of ≥1 block in ${H} days`,
-          ...(rent ? { "net $/TFLOP-hour": (s.netDay / (gpu.fp32 * 24)).toPrecision(3) } : {}),
-        },
-      });
-    }
-    if (inp.mode !== "own") continue;
-    // Selling the hashrate instead: NiceHash pays per H/s, MiningRigRentals rents whole rigs.
+  // Selling the card's hashrate (owning mode only): NiceHash pays per H/s, MiningRigRentals rents whole rigs.
+  for (const [algo, [hs, watts]] of Object.entries(inp.mode === "own" ? bench.gpus[inp.gpu] ?? {} : {})) {
     const sell: [Row["kind"], string, number, string, number][] = [];
     const nh = latest.nicehash[algo];
     if (nh?.pay > 0) sell.push(["nicehash", "Sell on NiceHash", hs * nh.pay * (1 - tables.fees.nicehash.fee), "fee " + pct(tables.fees.nicehash.fee), 1]);
@@ -290,76 +227,4 @@ const sortValue: Record<SortKey, (r: Row) => number> = {
 export function sortRows(rows: Row[], key: SortKey, desc = true): Row[] {
   const v = sortValue[key];
   return [...rows].sort((a, b) => (desc ? v(b) - v(a) : v(a) - v(b)) || b.p50 - a.p50);
-}
-
-/** Flags about how tradeable a coin is: a tiny daily volume, or data WhatToMine itself marks as lagging. */
-function coinFlags(c: Coin, latest: Latest, tables: Tables): string[] {
-  const flags = [];
-  const volUsd = (c.vol_btc ?? Infinity) * latest.usd.BTC;
-  if (volUsd < tables.defaults.thin_market_usd) flags.push(`thin market: $${money(volUsd)}/day traded`);
-  if (c.lagging) flags.push("WhatToMine marks this coin's data as lagging");
-  return flags;
-}
-
-/** Revenue you could actually sell: at most max_volume_share of the coin's daily volume without moving its price. */
-function sellable(c: Coin, revenueUsd: number, latest: Latest, tables: Tables) {
-  const flags = c.lagging ? ["WhatToMine marks this coin's data as lagging"] : [];
-  if (c.vol_btc == null) return { revenue: revenueUsd, flags };
-  const volUsd = c.vol_btc * latest.usd.BTC, cap = tables.defaults.max_volume_share * volUsd;
-  if (revenueUsd <= cap) return { revenue: revenueUsd, flags };
-  return { revenue: cap, flags: [`only $${money(volUsd)}/day of ${c.name} trades: you could sell about $${money(cap)} of it`, ...flags] };
-}
-
-export function buyRows(inp: Inputs, latest: Latest, tables: Tables): BuyRow[] {
-  const BTC = latest.usd.BTC, out: BuyRow[] = [];
-  if (!(BTC > 0) || !(inp.budget > 0)) return out;
-  for (const algo of Object.keys(tables.algos)) {
-    // Best coin for this algorithm, in $ per H/s per day.
-    let best: { coin: Coin; usdPerHs: number } | null = null;
-    for (const c of latest.coins) {
-      const S = latest.usd[c.tag];
-      if (c.algo !== algo || !(c.nethash > 0 && c.block_time > 0 && S > 0)) continue;
-      const usdPerHs = (1 / c.nethash) * (86400 / c.block_time) * c.block_reward * S * (1 - inp.poolFee);
-      if (!best || usdPerHs > best.usdPerHs) best = { coin: c, usdPerHs };
-    }
-    if (!best) continue;
-    const nh = latest.nicehash[algo];
-    if (nh?.book.length) {
-      const fee = tables.defaults.buy_fee_nicehash;
-      // Nobody buys below what NiceHash pays sellers: stray cheap orders in the book aren't really for sale.
-      const book = nh.book.map(([p, c]) => [Math.max(p, nh.pay), c] as [number, number]);
-      const fill = fillBook(book, inp.budget / BTC, fee);
-      const sold = sellable(best.coin, fill.hs * best.usdPerHs, latest, tables);
-      const spend = fill.hs * fill.priceBtc * (1 + fee) * BTC, revenue = sold.revenue;
-      const u = si(fill.hs);
-      if (spend > 0) out.push({
-        algo, venue: "nicehash", coin: best.coin.name, marginPct: (revenue - spend) / spend, spend, revenue,
-        flags: [...(fill.exhausted ? [`book exhausted: only $${money(spend)} of $${inp.budget.toLocaleString("en-US")}/day fillable`] : []), ...sold.flags],
-        detail: { bought: `${u.text} at ${(fill.priceBtc * u.factor).toPrecision(3)} BTC per ${u.prefix}H/s per day`, fee: pct(fee) },
-      });
-    }
-    const mrr = latest.mrr[algo];
-    if (mrr?.price > 0) {
-      const fee = tables.fees.mrr.fee, hs = inp.budget / (mrr.price * (1 + fee) * BTC);
-      const sold = sellable(best.coin, hs * best.usdPerHs, latest, tables), revenue = sold.revenue;
-      out.push({
-        algo, venue: "mrr", coin: best.coin.name, marginPct: (revenue - inp.budget) / inp.budget, spend: inp.budget, revenue,
-        // ponytail: MRR priced at its suggested price, not walked through live rig listings.
-        flags: ["priced at MRR's suggested price", ...sold.flags],
-        detail: { bought: si(hs).text, fee: pct(fee) },
-      });
-    }
-  }
-  for (const r of out)
-    if (r.marginPct > 1) r.flags.push("margin over +100%: usually an illiquid coin or a stale price, check before trusting");
-  // Rows that can't fill half the budget (a nearly empty market) rank below ones that can, whatever their margin.
-  const thin = (r: BuyRow) => (r.spend < inp.budget / 2 ? 1 : 0);
-  return out.filter((r) => Number.isFinite(r.marginPct)).sort((a, b) => thin(a) - thin(b) || b.marginPct - a.marginPct);
-}
-
-/** 4810 H/s → "4.81 kH/s" (for Sol algorithms read Sol/s). */
-function si(hs: number) {
-  const steps: [string, number][] = [["E", 1e18], ["P", 1e15], ["T", 1e12], ["G", 1e9], ["M", 1e6], ["k", 1e3], ["", 1]];
-  const [prefix, factor] = steps.find(([, f]) => hs >= f) ?? ["", 1];
-  return { prefix, factor, text: `${(hs / factor).toPrecision(3)} ${prefix}H/s` };
 }

@@ -1,4 +1,4 @@
-import { buyRows, gpuRows, priceCone, rentCost, sortRows, MARKET_NAMES, type Bench, type BuyRow, type Inputs, type Latest, type Row, type SortKey, type Tables, type Alpha } from "./calc.js";
+import { gpuRows, priceCone, rentCost, sortRows, MARKET_NAMES, type Bench, type Inputs, type Latest, type Row, type SortKey, type Tables, type Alpha } from "./calc.js";
 
 const DATA = new URLSearchParams(location.search).get("data") ?? "https://raw.githubusercontent.com/mattiaskjellsson/tao-calc-data/main/site-data/";
 const STALE_HOURS = 3;
@@ -35,13 +35,11 @@ function inputs(): Inputs {
     horizon: num("horizon", 30),
     rankPct: Math.min(100, Math.max(1, num("rankPct", tables.defaults.rank_pct))),
     util: util === "" || util == null ? null : Math.min(1, Math.max(0, Number(util) / 100)),
-    poolFee: Math.min(0.5, Math.max(0, num("poolFee", tables.defaults.pool_fee * 100) / 100)),
-    budget: Math.max(0, num("budget", tables.defaults.budget)),
   };
 }
 
 function flagsHtml(flags: string[]) {
-  const hot = /winner-take-all|earn 0|banned|exhausted/;
+  const hot = /winner-take-all|earn 0/;
   return `<div class="flags">${flags.map((f) => `<span class="flag${hot.test(f) ? " hot" : ""}">${esc(f)}</span>`).join("")}</div>`;
 }
 
@@ -57,7 +55,7 @@ function breakEven(r: Row, mode: string) {
 
 function renderRows(inp: Inputs) {
   const f = new FormData(form), key = String(f.get("sort") ?? "p50") as SortKey, minChance = Number(f.get("minChance") ?? 0);
-  const all = gpuRows(inp, latest, bench, tables, new Date(), alpha).filter((r) => r.chance >= minChance);
+  const all = gpuRows(inp, latest, bench, tables, alpha).filter((r) => r.chance >= minChance);
   const nonGpu = all.filter((r) => r.usesGpu === false).length;
   const rows = sortRows(f.get("nonGpu") === "on" ? all : all.filter((r) => r.usesGpu !== false), key, desc);
   $<HTMLElement>("#nongpu-count").textContent = nonGpu ? `(${nonGpu})` : "";
@@ -86,7 +84,7 @@ function renderRows(inp: Inputs) {
   btn.hidden = rows.length <= SHOW;
   btn.textContent = showAll ? "Show top 25" : `Show all ${rows.length}`;
   const gpu = tables.gpus[inp.gpu];
-  const rent = inp.mode === "rent" ? rentCost(inp.gpu, latest, tables) : null;
+  const rent = inp.mode === "rent" ? rentCost(inp.gpu, latest) : null;
   $<HTMLElement>("#gpu-title").textContent = inp.mode === "own"
     ? `What a ${gpu.name} can do at $${inp.kwh}/kWh`
     : rent ? `Renting a ${gpu.name}: cheapest $${rent.usdHour.toFixed(2)}/h on ${MARKET_NAMES[rent.market]}` : `No ${gpu.name} for rent right now`;
@@ -96,7 +94,7 @@ const SOURCE = { implied: "implied by Binance options, the market's own forecast
 const price = (v: number) => `$${v >= 1 ? v.toPrecision(4) : v.toPrecision(3)}`;
 const CONE = { w: 600, h: 170, l: 8, r: 150, t: 10, b: 24 };
 
-/** Where the coin this row is paid in could trade over the horizon (p10/p50/p90), with the break-even price. */
+/** Where what this row is paid in could trade over the horizon (p10/p50/p90), with the break-even price. */
 function coneHtml(r: Row, H: number): string {
   if (!r.price || !(r.price.spot > 0) || H < 1) return "";
   const { tag, spot, sigma, kind } = r.price, cone = priceCone(spot, sigma, H), end = cone[H];
@@ -135,21 +133,10 @@ function coneHover(e: PointerEvent) {
   tip.textContent = `day ${day}: ${price(c.p10)} · ${price(c.p50)} · ${price(c.p90)}`;
 }
 
-function renderBuy(inp: Inputs) {
-  const rows: BuyRow[] = inp.mode === "rent" ? buyRows(inp, latest, tables) : [];
-  $<HTMLTableSectionElement>("#buy-rows tbody").innerHTML = rows.map((r) => `<tr>
-    <td data-label=""><div class="label">${esc(r.algo)} → ${esc(r.coin)}</div><div class="where">${esc(Object.values(r.detail).join(", "))}</div></td>
-    <td data-label="Venue">${r.venue === "nicehash" ? "NiceHash" : "MiningRigRentals"}</td>
-    <td class="num" data-label="Margin"><span class="${r.marginPct >= 0 ? "pos" : "neg"}">${pct(r.marginPct)}</span></td>
-    <td class="num" data-label="Spend → revenue">${usd(r.spend)} → ${usd(r.revenue)}</td>
-    <td data-label="">${flagsHtml(r.flags)}</td></tr>`).join("");
-}
-
 function render() {
   const inp = inputs();
   document.body.className = `mode-${inp.mode}`;
   renderRows(inp);
-  renderBuy(inp);
 }
 
 function banner(msg: string | null) {

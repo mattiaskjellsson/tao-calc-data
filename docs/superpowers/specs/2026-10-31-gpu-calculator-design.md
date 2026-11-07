@@ -264,6 +264,7 @@ revenue_day = market_price_per_hour(GPU model, market) × 24 × utilisation × (
 - It's a website, hosted on Cloudflare, that does the calculations.
 - Hourly updates.
 - Covers coins that can be mined, plus Bittensor. Staking is out.
+- Per-coin mining rows, mining on a rented card, and "buy hashrate" are dropped (2026-11-07). WhatToMine's and minerstat's terms don't allow this site without permission. Selling hashrate on NiceHash and MiningRigRentals stays.
 - A "what can I do with my GPU" calculator, with **owning a card** and **renting cards** modes.
 - Public site, no login.
 - Data goes in an open GitHub repo on the owner's account. No cash, so $0 running cost.
@@ -286,7 +287,7 @@ revenue_day = market_price_per_hour(GPU model, market) × 24 × utilisation × (
 - NiceHash's device table is the source of GPU × algorithm hashrates and power.
 - Default rank percentile is the 25th percentile of non-zero earners. Default utilisation, where no signal exists, is 50%.
 - **What the range on each row means.** Bittensor's headline uses the chosen rank, its range is price uncertainty, and the rank spread appears on its own line. Rent-out uses a utilisation band of ± 20 percentage points. The GPU table is ranked by p50.
-- "Buy hashrate" rows get their own table, ranked by margin %, with a budget field (default $10/day) priced against the live order book.
+- ~~"Buy hashrate" rows get their own table.~~ Removed 2026-11-07, along with the per-coin rows.
 - Figures derived from a source (percentiles, volatility) may go into the public `latest.json` and summaries even when that source's raw data can't be republished, **unless the source's terms also cover derived data, as Deribit's do.**
 - Deribit's data goes in the private repo. The main repo stays public.
 - A $/TFLOP-hour column in renting mode.
@@ -311,5 +312,5 @@ revenue_day = market_price_per_hour(GPU model, market) × 24 × utilisation × (
 - ~~Create the private archive repo.~~ Done 2026-11-02: `tao-calc-data-private`.
 - ~~Create the token and store it in Railway.~~ Done: `GITHUB_REPO_DATA_KEY` on the Railway service `recorder`. Public repo added to the token 2026-11-04.
 - ~~Check the remaining sources' terms.~~ Done 2026-11-04: see "Sources and their terms" in the README. Vast and RunPod are no longer collected, because their terms forbid automated collection.
-- **Open:** WhatToMine's terms forbid using its API "for any application that replicates or attempts to replace the essential user experience of whattomine.com". Ask for permission, or replace the source.
+- ~~WhatToMine's terms.~~ Settled 2026-11-07: per-coin mining rows dropped and WhatToMine no longer collected. minerstat was checked as a replacement and rejected: it allows 24-hour caching at most, no redistribution as a file, and no "substantially similar site". Its key (`MINER_STAT_KEY`, in `.env` only) is unused. Optional: ask either of them for written permission to bring the rows back.
 - Add any free API keys yourself as Railway variables. Never paste them into chat or files. The Alpha Vantage key pasted into chat on 2026-10-31 should be regenerated, although this project doesn't need it.

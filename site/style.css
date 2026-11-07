@@ -13,13 +13,13 @@ header, form, #banner, main, footer { max-width: 1100px; margin: 0 auto; padding
 header { padding-top: 28px; }
 h1 { font-size: 1.7rem; margin: 0 0 6px; letter-spacing: -0.01em; }
 h2 { font-size: 1.15rem; margin: 28px 0 10px; }
-.lede, .note { color: var(--muted); margin: 0 0 16px; max-width: 70ch; }
+.lede { color: var(--muted); margin: 0 0 16px; max-width: 70ch; }
 a { color: var(--accent); }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 .unit { color: var(--muted); font-weight: 400; font-size: 0.85em; }
 
 form { display: flex; flex-wrap: wrap; gap: 12px 18px; align-items: end; padding-top: 6px; padding-bottom: 6px; }
-form > label, .more label, .budget { display: flex; flex-direction: column; gap: 4px; font-weight: 600; font-size: 0.9rem; }
+form > label, .more label { display: flex; flex-direction: column; gap: 4px; font-weight: 600; font-size: 0.9rem; }
 select, input[type=number] { font: inherit; padding: 7px 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--ink); min-width: 9rem; }
 fieldset.mode { border: 0; padding: 0; margin: 0; display: flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
 fieldset.mode label { padding: 8px 14px; cursor: pointer; background: var(--panel); font-weight: 600; }
@@ -30,7 +30,6 @@ details.more { flex-basis: 100%; }
 details.more summary { cursor: pointer; color: var(--muted); font-size: 0.9rem; }
 details.more[open] { display: flex; flex-wrap: wrap; gap: 12px 18px; }
 details.more[open] summary { flex-basis: 100%; }
-.budget { margin-bottom: 10px; max-width: 12rem; }
 form > label.check { flex-direction: row; align-items: center; gap: 6px; font-weight: 500; }
 figure.cone { margin: 0 0 12px; max-width: 640px; }
 figure.cone svg { width: 100%; height: auto; display: block; touch-action: pan-y; }
@@ -41,7 +40,7 @@ figure.cone svg { width: 100%; height: auto; display: block; touch-action: pan-y
 .cone text { fill: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 .cone .tip { fill: var(--ink); }
 figure.cone figcaption { color: var(--muted); font-size: 0.82rem; margin-top: 4px; }
-body.mode-rent .own-only, body.mode-own .rent-only { display: none; }
+body.mode-rent .own-only { display: none; }
 
 #banner { margin-top: 12px; }
 #banner > div { background: var(--warn-bg); color: var(--warn-ink); padding: 10px 14px; border-radius: 10px; }

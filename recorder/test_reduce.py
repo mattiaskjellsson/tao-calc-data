@@ -3,7 +3,7 @@ import math
 import os
 from datetime import datetime, timezone
 
-from reduce import alias_map, atm_iv, benchmarks, gpu_id, nicehash_book, realised_vol, reduce, subnet_stats
+from reduce import alias_map, atm_iv, benchmarks, gpu_id, realised_vol, reduce, subnet_stats
 
 TABLES = json.load(open(os.path.join(os.path.dirname(__file__), "..", "tables.json")))
 NOW = datetime(2026, 11, 3, 10, 7, tzinfo=timezone.utc)
@@ -47,42 +47,17 @@ def test_realised_vol():
     assert math.isclose(realised_vol(closes), math.log(1.1) * math.sqrt(365), rel_tol=1e-6)
 
 
-def test_nicehash_book_drops_dead_orders():
-    orders = [{"price": "0.06", "acceptedSpeed": "0.02", "alive": True},
-              {"price": "0.05", "acceptedSpeed": "0", "alive": True},
-              {"price": "0.055", "acceptedSpeed": "0.01", "alive": True}]
-    book = nicehash_book(orders, 1e12, 1e12)
-    assert [round(p * 1e12, 4) for p, _ in book] == [0.055, 0.06]
-    assert [round(c / 1e12, 4) for _, c in book] == [0.01, 0.03]
-
-
-def wtm(name, **kw):
-    coin = {"tag": "RVN", "algorithm": "KawPow", "block_time": "60.0", "block_reward": 2500.0, "nethash": 5e12,
-            "difficulty": 100.0, "difficulty24": 100.0, "exchange_rate": 2e-7}
-    coin.update(kw)
-    return name, coin
-
-
 def raw_min(**over):
-    raw = {"binance_24h": [{"symbol": "BTCUSDT", "lastPrice": "78000"}, {"symbol": "TAOUSDT", "lastPrice": "230"}],
-           "wtm_gpu": {"coins": dict([wtm("Ravencoin"), wtm("Dead", tag="DEAD", nethash=0),
-                                      wtm("NoPrice", tag="NOP", exchange_rate=0)])},
-           "wtm_asic": {"coins": {}}}
+    raw = {"binance_24h": [{"symbol": "BTCUSDT", "lastPrice": "78000"}, {"symbol": "TAOUSDT", "lastPrice": "230"}]}
     raw.update(over)
     return raw
-
-
-def test_reduce_skips_bad_coins():
-    out = reduce(raw_min(), TABLES, NOW)
-    assert [c["name"] for c in out["coins"]] == ["Ravencoin"]
-    assert math.isclose(out["usd"]["RVN"], 2e-7 * 78000)
 
 
 def test_reduce_marks_failed_source():
     out = reduce(raw_min(clore={"error": "HTTP Error 403: 1010"}), TABLES, NOW)
     assert out["sources"]["clore"]["ok"] is False
     assert all("clore" not in markets for markets in out["rentals"].values())
-    assert out["sources"]["wtm_gpu"]["ok"] is True
+    assert out["sources"]["binance_24h"]["ok"] is True
 
 
 def test_reduce_rentals_and_util():
@@ -137,32 +112,14 @@ def test_junk_records_fail_only_their_market():
     assert out["rentals"]["rtx4090"]["ionet"]["min"] == 0.25
 
 
-def test_nicehash_book_zero_factor():
-    assert nicehash_book([{"price": "0.06", "acceptedSpeed": "0.02"}], 0, 1e12) == []
-
-
-def test_binance_price_used_only_when_it_agrees_with_whattomine():
-    raw = raw_min(binance_24h=[{"symbol": "BTCUSDT", "lastPrice": "78000"}, {"symbol": "RVNUSDT", "lastPrice": "0.0157"},
-                               {"symbol": "XMRUSDT", "lastPrice": "118"}],
-                  binance_klines={"RVN": [1.0, 1.1] * 10, "XMR": [1.0, 1.1] * 10})
-    raw["wtm_gpu"]["coins"]["Monero"] = {**wtm("Monero")[1], "tag": "XMR", "algorithm": "RandomX", "exchange_rate": 0.0078}
-    raw["wtm_gpu"]["coins"]["Bitcoin"] = {**wtm("Bitcoin")[1], "tag": "BTC", "algorithm": "SHA-256", "exchange_rate": 78100,
-                                          "exchange_rate_curr": "BTC"}  # WhatToMine labels it BTC; the value is USD
-    out = reduce(raw, TABLES, NOW)
-    assert out["usd"]["RVN"] == 0.0157  # within 10% of WhatToMine's 0.0156: Binance's fresher price
-    assert math.isclose(out["usd"]["XMR"], 0.0078 * 78000)  # a frozen delisted ticker is ignored
-    assert out["vol"]["RVN"]["kind"] == "realised" and out["vol"]["XMR"]["kind"] == "assumed"
-    assert out["usd"]["BTC"] == 78000
-
-
 def test_only_cleared_sources_go_to_the_public_archive():
     from main import split_snapshot
 
     public, held = split_snapshot({"binance_24h": [1], "bittensor": [2], "clore": {"x": 1}}, ["binance_24h", "bittensor"])
     assert public == {"binance_24h": [1], "bittensor": [2]}
     assert held == {"clore": {"x": 1}}
-    assert "clore" not in TABLES["publish_raw"] and "wtm_gpu" not in TABLES["publish_raw"]  # terms don't allow it
-    assert {"binance_24h", "bittensor", "nicehash_books", "hyperliquid"} <= set(TABLES["publish_raw"])
+    assert "clore" not in TABLES["publish_raw"]  # terms don't allow it
+    assert {"binance_24h", "bittensor", "nicehash_stats", "hyperliquid"} <= set(TABLES["publish_raw"])
 
 
 def test_subnet_stats_flags_wallet_concentration_and_sell_pressure():
@@ -185,11 +142,17 @@ def test_subnet_stats_newcomers_and_seats():
     assert math.isclose(s["new_median"], (1 / 5 * pool + 2 / 5 * pool) / 2)
 
 
-def test_reduce_keeps_market_depth_and_lagging():
-    raw = raw_min()
-    raw["wtm_gpu"]["coins"]["Ravencoin"].update(exchange_rate_vol=3.2, lagging=True)
-    c = reduce(raw, TABLES, NOW)["coins"][0]
-    assert c["vol_btc"] == 3.2 and c["lagging"] is True
+def test_reduce_publishes_no_coin_data():
+    raw = {"binance_24h": [{"symbol": "BTCUSDT", "lastPrice": "78000"}, {"symbol": "TAOUSDT", "lastPrice": "230"},
+                           {"symbol": "RVNUSDT", "lastPrice": "0.0157"}]}
+    out = reduce(raw, TABLES, NOW)
+    assert "coins" not in out
+    assert out["usd"] == {"BTC": 78000, "TAO": 230}  # only what the rows are paid in
+
+
+def test_nicehash_keeps_only_the_paying_price():
+    raw = {"nicehash_stats": {"algos": [{"a": 1, "p": 5.6}]}, "nicehash_algos": {"miningAlgorithms": [{"algorithm": "KAWPOW", "order": 1}]}}
+    assert reduce(raw, TABLES, NOW)["nicehash"] == {"kawpow": {"pay": 5.6e-8}}
 
 
 def test_alpha_stats_from_daily_pool_history():

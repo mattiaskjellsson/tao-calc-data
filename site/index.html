@@ -4,13 +4,13 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>GPU Earnings Calculator</title>
-  <meta name="description" content="What's the most profitable thing to do with this GPU right now: mine a coin, run a Bittensor miner, or rent it out.">
+  <meta name="description" content="What's the most profitable thing to do with this GPU right now: sell its hashrate, run a Bittensor miner, or rent it out.">
   <link rel="stylesheet" href="./style.css">
 </head>
 <body>
   <header>
     <h1>What can my GPU do?</h1>
-    <p class="lede">Mining a proof-of-work coin, running a Bittensor miner or renting the card out: ranked by what you'd net over the horizon you pick. Updated hourly.</p>
+    <p class="lede">Selling its hashrate, running a Bittensor miner or renting the card out: ranked by what you'd net over the horizon you pick. Updated hourly.</p>
   </header>
 
   <form id="controls" autocomplete="off">
@@ -43,7 +43,6 @@
       <summary>Assumptions</summary>
       <label>Bittensor rank <span class="unit">percentile of earners</span> <input name="rankPct" type="number" min="1" max="100" step="1" value="25"></label>
       <label class="own-only">Rent-out utilisation <span class="unit">% (blank = market signal)</span> <input name="util" type="number" min="0" max="100" step="5" placeholder="market"></label>
-      <label>Pool fee <span class="unit">%</span> <input name="poolFee" type="number" min="0" max="20" step="0.5" value="1"></label>
     </details>
   </form>
 
@@ -56,7 +55,7 @@
         <thead><tr><th>Option</th>
           <th class="num"><button type="button" class="sort" data-sort="netDay">Net $/day</button></th>
           <th class="num" title="Bad, typical and good outcomes from price moves over the horizon (and utilisation for renting out), at your settings. Not your Bittensor rank: that's in the row details."><button type="button" class="sort" data-sort="p50">Net over horizon</button> <span class="unit">bad · <b>typical</b> · good</span></th>
-          <th class="num"><button type="button" class="sort" data-sort="chance" title="How likely this earns anything at all. Pool mining ≈100%; Bittensor: the share of slots earning now; renting out: utilisation.">Chance of earning</button></th>
+          <th class="num"><button type="button" class="sort" data-sort="chance" title="How likely this earns anything at all. NiceHash ≈100%; MiningRigRentals: the share of rigs rented; Bittensor: the share of new slots earning; renting out: utilisation.">Chance of earning</button></th>
           <th><button type="button" class="sort" data-sort="breakEven" title="Sorts by how far the break-even price is below today's price.">Break-even</button></th>
           <th>Flags</th></tr></thead>
         <tbody></tbody>
@@ -64,22 +63,12 @@
       <p class="empty" id="rows-empty" hidden>No options for this card with the current data.</p>
       <button type="button" id="show-all" hidden></button>
     </section>
-
-    <section id="buy" class="rent-only">
-      <h2>Or buy hashrate directly</h2>
-      <p class="note">No GPU involved: rent hashrate on NiceHash or MiningRigRentals and point it at the best coin for that algorithm. Ranked by margin.</p>
-      <label class="budget">Budget <span class="unit">$/day</span> <input form="controls" name="budget" type="number" min="1" step="1" value="10"></label>
-      <table id="buy-rows" class="results">
-        <thead><tr><th>Algorithm → coin</th><th>Venue</th><th class="num">Margin</th><th class="num">Spend → revenue /day</th><th>Flags</th></tr></thead>
-        <tbody></tbody>
-      </table>
-    </section>
   </main>
 
   <footer>
     <p id="stamp">Loading data…</p>
     <p>Not financial advice. Estimates from public market data. Earnings can be zero or negative, and past rates don't hold.</p>
-    <p>Prices and options data from <a href="https://data.binance.vision">Binance Vision</a>, used under <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a>; no endorsement implied. Also WhatToMine, NiceHash, MiningRigRentals, Vast, Clore, Lium, RunPod, Akash, io.net, CoinGecko and the Bittensor chain.</p>
+    <p>Prices and options data from <a href="https://data.binance.vision">Binance Vision</a>, used under <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a>; no endorsement implied. Also NiceHash, MiningRigRentals, Clore, Lium, Akash, io.net and the Bittensor chain. Backup BTC and TAO prices <a href="https://www.coingecko.com">Powered by CoinGecko</a>.</p>
     <p>All math runs in your browser. Open data and code: <a href="https://github.com/mattiaskjellsson/tao-calc-data">github.com/mattiaskjellsson/tao-calc-data</a>.</p>
   </footer>
   <script type="module" src="./dist/app.js"></script>
