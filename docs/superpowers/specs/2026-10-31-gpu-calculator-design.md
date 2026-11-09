@@ -306,7 +306,7 @@ revenue_day = market_price_per_hour(GPU model, market) × 24 × utilisation × (
 
 ## Owner to-dos
 
-- ~~Create the public GitHub repo.~~ Done 2026-11-04: `tao-calc-data`, with GitHub Pages on.
+- ~~Create the public GitHub repo.~~ Done 2026-11-04: `tao-calc-data`, with GitHub Pages on. GitHub Pages switched off 2026-11-09: Cloudflare Pages is the only host.
 - ~~Cloudflare Pages.~~ Done 2026-11-04: https://tao-calc.pages.dev (wrangler direct upload; `npm run deploy:cloudflare`).
 - Optional: email info@deribit.com to ask for written approval to publish Deribit option data in a free, non-commercial open archive.
 - ~~Create the private archive repo.~~ Done 2026-11-02: `tao-calc-data-private`.

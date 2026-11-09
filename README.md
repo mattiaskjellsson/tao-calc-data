@@ -26,7 +26,7 @@ Not financial advice. Earnings can be zero or negative.
 | Part | What | Where |
 |---|---|---|
 | `recorder/` | Python, run hourly by a Railway cron. It fetches every source, archives the raw responses and writes `site-data/`. | Railway |
-| `site/` | Static TypeScript page. All the math runs in the browser (`site/src/calc.ts`), from `site-data/latest.json` read off this repo's raw URL. | GitHub Pages / Cloudflare Pages |
+| `site/` | Static TypeScript page. All the math runs in the browser (`site/src/calc.ts`), from `site-data/latest.json` read off this repo's raw URL. | Cloudflare Pages |
 | `tables.json` | Hand-kept tables: GPU specs and name aliases, algorithm names, platform fees (with sources), subnet hardware needs, defaults. | both |
 
 The design is in [`docs/superpowers/specs/2026-10-31-gpu-calculator-design.md`](docs/superpowers/specs/2026-10-31-gpu-calculator-design.md).
@@ -111,5 +111,4 @@ python3 -m http.server 8080                               # open http://localhos
   - The service needs `GITHUB_REPO_DATA_KEY`: a fine-grained token with Contents read and write on this repo and the private archive repo.
   - `PUBLIC_REPO` and `PRIVATE_REPO` are optional overrides.
 - **Site on Cloudflare Pages** (https://tao-calc.pages.dev): run `cd site && npm run deploy:cloudflare`. It uses your local `wrangler` login and uploads `_site/` to the Pages project `tao-calc`. Only code changes need a deploy, because the page reads the hourly data straight from this repo.
-- **Site on GitHub Pages** (https://mattiaskjellsson.github.io/tao-calc-data/): `.github/workflows/site.yml` deploys on pushes that change anything outside `site-data/`.
 - **Pushing:** the recorder commits `site-data/latest.json` to `main` every hour, so run `git pull --rebase` before you push.
